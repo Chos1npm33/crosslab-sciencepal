@@ -66,6 +66,10 @@ node scripts/run-framework.mjs build
 
 2026-10-24 验收记录：63 项测试、1 项 Worker 测试及 TypeScript 检查通过，并完成浏览器案例载入、刷新恢复和生产接口结果回传验证。自动化测试与真实 SciencePal 运行分别记录。
 
+## GitHub 自动部署
+
+通过 GitHub Actions 将 `main` 分支部署到自己的 Cloudflare Workers，配置步骤见[自动部署说明](docs/github-deployment.md)。首次部署仍需填写账户凭据、设置 Cloudflare Access 并验收。
+
 ## 代码与文档
 
 前端使用 React、Vinext 和 Vite，服务端兼容 Cloudflare Workers。
