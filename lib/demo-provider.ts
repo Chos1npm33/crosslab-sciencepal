@@ -1,4 +1,5 @@
 import { type Context, type Paper, type Analysis, type Plan, type Result, type Evaluation, fingerprint } from './research';
+import { genomicsAnalysis, genomicsPlan, genomicsDeep, genomicsEvaluation } from './genomics-demo';
 
 const transport: Paper = { id: 'P6', title: 'Optimal-Transport Analysis of Single-Cell Gene Expression Identifies Developmental Trajectories in Reprogramming', year: '2019', url: 'https://doi.org/10.1016/j.cell.2019.01.006', role: '方法', contribution: '将最优传输用于单细胞基因表达时间序列，估计不同时间点状态分布之间的联系。', relevance: '为比较发育时期的状态分布提供方法参考，需重新设计马铃薯多组学的特征表示和代价函数。', boundary: '推断的状态联系需要相应数据与模型假设；单次采样不能据此重建真实发育时间轨迹，推断也不等同于真实细胞谱系。', provenance: '预置文献 · 附件提供的原始研究 DOI 与方法概要；全文参数尚待复核' };
 const potato: Paper = { id: 'P7', title: 'Transcriptomics combined with physiological analysis and metabolomics revealed the response of potato tuber formation to nitrogen', year: '2024', url: 'https://link.springer.com/article/10.1186/s12870-024-05758-2', role: '背景', contribution: '结合转录组、生理分析与代谢组，研究不同氮条件下马铃薯块茎形成的共表达基因与潜在通路。', relevance: '为马铃薯块茎形成的多组学变量选择与条件设计提供本领域参考。', boundary: '研究场景为氮处理下的块茎形成；该研究不直接验证最优传输方法或发育轨迹推断。', provenance: '预置文献 · 已核对公开摘要' };
@@ -9,6 +10,7 @@ const diffusion: Paper = { id: 'P4', title: 'Spatial organization in microbial r
 const attention: Paper = { id: 'P5', title: 'Travel time variability and rational inattention', year: '2019', url: 'https://doi.org/10.1016/j.trb.2018.12.003', role: '方法', contribution: '将信息获取策略纳入随机旅行时间下的出发时间选择。', relevance: '为带有信息成本的采样或管理决策提供建模参考。', boundary: '需明确谁做决策、接收什么信息以及优化什么结果。', provenance: '预置文献 · 已核对公开摘要' };
 
 export function analyze(c: Context): Analysis {
+  if (c.direction === 'genomics') return genomicsAnalysis(c);
   const custom = c.direction === 'custom';
   const targetFitsExample = c.direction === 'transport' ? /马铃薯|块茎/.test(c.problem.field + c.problem.question) : /微生物|根际|群落/.test(c.problem.field + c.problem.question);
   const ideas = {
@@ -22,9 +24,11 @@ export function analyze(c: Context): Analysis {
   return { summary: `围绕“${c.problem.field}”，借鉴“${c.method}”建立可审查的迁移关系。${generic ? '目标领域超出预置案例，以下保留方法结构，目标变量由研究者填写。' : '以下为预置示例分析，请结合研究条件修正。'}`, hypothesis: generic ? `检验“${c.method}”能否为“${c.problem.question}”提供可测量、可区分于现有方法的新解释。` : ideas.hypothesis, papers: custom ? [traffic] : c.direction === 'transport' ? [potato, transport] : c.direction === 'attention' ? [attention, traffic] : generic ? [network] : c.direction === 'diffusion' ? [root, diffusion, network] : [network, root, traffic], mappings: ideas.sources.map((s, i) => ({ id: `M${i + 1}`, source: s, target: generic ? `待填写：${c.problem.field} 中与“${s}”对应的对象或变量` : ideas.targets[i], condition: ideas.conditions[i], status: 'pending' })), questions: c.direction === 'transport' ? ['样本是单次采样、多时期采样，还是尚无数据？样本单位为 bulk 还是单细胞？', '目标是分布比较、预测还是发育机制？能否补充缺失时期与生物重复？'] : ['现有数据支持统计关联、方向性关系，还是直接机制证据？', '哪一项关键条件已经满足，哪一项需要补充？'] };
 }
 export async function makePlan(c: Context): Promise<Plan> {
+  if (c.direction === 'genomics') return genomicsPlan(c);
   return { fingerprint: await fingerprint(c), questions: [c.problem.question, `“${c.method}”在目标问题中的前提是否成立？`, '最近邻工作已经解决什么，新增贡献在哪里？'], searches: [`建议检索（未执行）：${c.problem.field} ${c.method}`, `建议检索（未执行）：${c.method} assumptions limitations`, `建议检索（未执行）：${c.problem.field} intervention validation`], tasks: ['整理已选文献记录中的贡献、适用范围与对应主张；分别标明预置来源或用户材料', c.direction === 'transport' ? '按用户声明的条件检查采样时期、bulk/单细胞单位、特征可比性、传输代价及增长/死亡假设' : '对照用户修正，检查迁移前提和缺失证据', '形成候选预测、基线与最小验证方案，列出仍需正式检索的事项'], stop: c.direction === 'transport' ? '单次采样且无法补样时，暂停真实发育过程重建；另行评估分布比较。关键映射被否定时重建对应关系。' : '关键前提被否定时停止该迁移；缺少证据时列出补充条件。', scope: `根据已选 ${c.papers.length} 条文献记录及 ${c.mappings.length} 项映射执行规则演示。用户材料仅复述所提供的摘要，未读取其全文，也未自动核验其中的主张。检索式是待执行建议；本轮不执行实时检索或实验。` };
 }
 export async function deepResearch(c: Context): Promise<Result> {
+  if (c.direction === 'genomics') return genomicsDeep(c);
   const rejected = c.mappings.filter(m => m.status === 'rejected');
   const isTransport = c.direction === 'transport';
   const processBlocked = isTransport && c.goal === 'mechanism' && c.sampleType !== 'timeSeries' && !c.canCollect;
@@ -46,6 +50,7 @@ export async function deepResearch(c: Context): Promise<Result> {
   ], next: rejected.length ? ['重新定义被否定的迁移关系', '修改后生成并确认新计划'] : processBlocked ? ['选择分布比较这一可行替代目标', '修改研究问题并确认新计划', '若可获取多时期数据，再恢复发育过程研究'] : ['检索并比较最近邻研究，核查新增贡献', '补充目标物种或体系的直接证据', '由研究者复核验证设计、资源与可实施性'] };
 }
 export function evaluate(c: Context): Evaluation {
+  if (c.direction === 'genomics') return genomicsEvaluation(c);
   const rejected = c.mappings.some(m => m.status === 'rejected');
   const pending = c.mappings.some(m => m.status === 'pending');
   const processBlocked = c.direction === 'transport' && c.goal === 'mechanism' && c.sampleType !== 'timeSeries' && !c.canCollect;

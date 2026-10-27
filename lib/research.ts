@@ -3,6 +3,7 @@ import { upstreamRunSchema } from './workflow-provenance';
 
 export const directions = [
   { id: 'transport', label: '数学 · 最优传输', method: '最优传输与状态分布比较', description: '比较多组学状态分布，审查发育过程重建的条件。', tag: '分布与发育', icon: 'network' },
+  { id: 'genomics', label: 'AI · 基因组预测', method: '卷积神经网络与基因组预测', description: '从 SNP 预测表型，以分组验证检验相对线性基线的增益。', tag: 'AI + Genomics', icon: 'network' },
   { id: 'network', label: '数学 · 网络科学', method: '网络鲁棒性与瓶颈分析', description: '从连接关系出发，研究系统如何响应扰动。', tag: '结构与关联', icon: 'network' },
   { id: 'diffusion', label: '物理 · 传输过程', method: '反应–扩散与空间建模', description: '用空间尺度、传输和反应解释局部差异。', tag: '空间与机制', icon: 'waves' },
   { id: 'attention', label: '经管 · 决策理论', method: '理性疏忽与信息成本', description: '研究有限信息下，如何分配注意力与决策。', tag: '信息与决策', icon: 'focus' },
@@ -22,7 +23,7 @@ const mappingList = z.array(mappingSchema).max(12).refine(uniqueIds, '映射 ID 
 const paperList = z.array(paperSchema).max(15).refine(uniqueIds, '文献 ID 必须唯一');
 const draftContextSchema = z.object({
   revision: z.number().int().min(1), problem: draftProblemSchema,
-  direction: z.enum(['transport', 'network', 'diffusion', 'attention', 'custom']), method: text.min(2),
+  direction: z.enum(['transport', 'genomics', 'network', 'diffusion', 'attention', 'custom']), method: text.min(2),
   sampleType: z.enum(['single', 'timeSeries', 'none']).default('single'),
   goal: z.enum(['mechanism', 'prediction']).default('mechanism'),
   canCollect: z.boolean().default(true),
