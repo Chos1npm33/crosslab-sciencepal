@@ -1,6 +1,6 @@
 # CrossLab · 跨界研究器
 
-本仓库是 CrossLab 网站的 GitHub 源码镜像，包含研究工作台、工作流接口和 SciencePal 接入代码。项目面向 SciencePal AI4Science Hackathon，帮助研究者从文献出发，判断其他学科的方法能否用于自己的研究问题。
+本仓库是 CrossLab 网站的 GitHub 源码仓库，包含研究工作台、工作流接口和 SciencePal 接入代码。项目面向 SciencePal AI4Science Hackathon，帮助研究者从文献出发，判断其他学科的方法能否用于自己的研究问题。
 
 核心流程：**描述研究问题 → 选择跨界方向 → 文献分析 → 交互修正 → 确认后深研 → 方案评估**。
 
@@ -59,7 +59,7 @@ RESEARCH_PROVIDER_API_KEY=your-private-gateway-key
 
 ```bash
 node tests/run.mjs
-node --test tests/sciencepal-worker.test.mjs
+node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs
 node node_modules/typescript/bin/tsc --noEmit
 node scripts/run-framework.mjs build
 ```
@@ -68,7 +68,9 @@ node scripts/run-framework.mjs build
 
 ## GitHub 自动部署
 
-通过 GitHub Actions 将 `main` 分支部署到自己的 Cloudflare Workers。首次部署关闭生产和预览 URL；设置服务端 Secret `CROSSLAB_ACCESS_CODE`（至少 16 字符的随机口令）后，将仓库变量 `CROSSLAB_WORKERS_DEV` 设为 `true` 并重新运行工作流。页面、API 和静态文件均需口令登录，会话持续 8 小时；预览 URL 保持关闭。登录验收后再配置研究密钥。步骤见[自动部署说明](docs/github-deployment.md)。
+站点：[CrossLab 研究工作台](https://crosslab-sciencepal.hytao0591.workers.dev/)。使用网站访问口令登录。每次推送到 `main` 后，GitHub Actions 完成测试、类型检查和构建，再自动部署到 Cloudflare Workers。
+
+页面、API 和静态文件均需口令登录，会话持续 8 小时；预览 URL 保持关闭。SciencePal 密钥保存在 Cloudflare Production Secrets。口令设置、部署凭据轮换和验收记录见[自动部署说明](docs/github-deployment.md)。
 
 ## 代码与文档
 

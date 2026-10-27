@@ -2,6 +2,16 @@
 
 `Chos1npm33/crosslab-sciencepal` 通过 `.github/workflows/deploy.yml` 部署到自己的 Cloudflare 账户。首次部署创建关闭外部 URL 的 Worker；设置网站访问口令后，再开启生产地址。网站使用自己的口令页，无需开通 Cloudflare Access 或 Zero Trust。
 
+## 2026-10-27 部署验收
+
+生产地址：[CrossLab 研究工作台](https://crosslab-sciencepal.hytao0591.workers.dev/)。[GitHub Actions 运行 40468621677](https://github.com/Chos1npm33/crosslab-sciencepal/actions/runs/40468621677) 已将提交 `fc9f5526a439c8b9c63f4de87681a41713c9ac76` 自动部署；68 项业务测试、20 项 Worker 测试、TypeScript 和构建通过。
+
+线上匿名访问主页、两个研究 API、静态 JS 和案例 JSON 均返回 401；登录表单返回 200，响应均禁止缓存。连续六次错误口令的结果为 `401, 401, 401, 401, 401, 429`，第六次携带等待时间。真实 Chrome 表单登录后已打开完整工作台，`/api/sciencepal` 返回 `ready: true`、`hasApiKey: true`、`hasAgentId: true`；SciencePal API Key 与 Agent ID 保存在 Production Secrets。
+
+登录及退出表单使用 `Referrer-Policy: same-origin`，同时校验请求的 `Origin` 与网站来源一致。`no-referrer` 会使浏览器原生表单发送 `Origin: null`，从而被来源校验拒绝；这一表单策略已修复，空来源和外部来源继续被拒绝。
+
+浏览器已载入原有 SciencePal 实测案例，正确显示五篇文献、修订后的方案评估及来源项目链接。本次部署验收读取现有案例与配置状态，没有新建 SciencePal 研究任务。
+
 ## 1. 配置部署凭据
 
 在 GitHub 仓库的 **Settings → Secrets and variables → Actions → Repository secrets** 添加：
@@ -54,7 +64,7 @@ CI 的 GitHub 权限仅需 `contents: read`，不生成提交，也不写回源�
 
 登录尝试由 `CROSSLAB_LOGIN_GUARD` 绑定的 `LoginAttemptCounter` 计数。每个网站来源与客户端 IP 的组合使用访问口令进行 HMAC 后定位同一个 Durable Object；对象只存次数和到期时间，不存明文 IP 或口令。首次尝试开始一个 60 秒窗口，最多接受 5 次口令校验，包括错误口令；后续尝试返回 429 和剩余等待秒数。共用 IP 的访问者共用计数。同步 SQLite 事务保证并发请求按同一计数处理，计数在 Worker 重启后保留；窗口过期后由 alarm 清理存储。更换口令会切换计数对象并使旧会话失效。
 
-CI 使用固定迁移 `crosslab-login-v1`，以 `new_sqlite_classes: ['LoginAttemptCounter']` 创建 SQLite 存储，后续部署保留该迁移。SQLite Durable Objects 支持 Workers Free，无需升级付费计划，适用其免费用量限制。原生限流在首次生产验收中未触发，已从配置移除；新实现上线后仍需确认连续第 6 次错误尝试返回 429。参见 [Cloudflare Durable Objects 限制与 Free 支持](https://developers.cloudflare.com/durable-objects/platform/limits/)及 [SQLite 存储 API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
+CI 使用固定迁移 `crosslab-login-v1`，以 `new_sqlite_classes: ['LoginAttemptCounter']` 创建 SQLite 存储，后续部署保留该迁移。SQLite Durable Objects 支持 Workers Free，无需升级付费计划，适用其免费用量限制。2026-10-27 已在线确认连续第 6 次错误尝试返回 429。参见 [Cloudflare Durable Objects 限制与 Free 支持](https://developers.cloudflare.com/durable-objects/platform/limits/)及 [SQLite 存储 API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
 
 开关只接受小写 `true`；未设置、`false` 或其他值均关闭生产 URL。要再次关闭地址，修改变量并运行工作流；修改变量本身不会立即改变线上状态。预览 URL 在两种状态下都关闭。
 
