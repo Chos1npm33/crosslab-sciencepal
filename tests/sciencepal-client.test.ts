@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sciencepalProgressSchema, sciencepalSessionSchema, completeSciencePalTask, handleSciencePalFailure, sciencePalWorkflowBody, type SciencePalPending, type WorkflowAction } from '../lib/sciencepal-client';
-import { initialState, exampleProblem, fingerprint, type Workspace } from '../lib/research';
+import { initialState, exampleProblem, fingerprint, analysisSchema, type Workspace } from '../lib/research';
 import { analyze, makePlan, deepResearch } from '../lib/demo-provider';
 
 const now = '2026-10-24T06:00:00.000Z';
@@ -43,6 +43,33 @@ test('a completed analysis preserves official provenance and merges only the val
   assert.equal(output.completed.meta.upstream?.provider, 'SciencePal');
   assert.equal(output.completed.meta.runId, 'official-run');
   assert.equal(output.next.context.papers.length, 2);
+});
+
+test('six valid analysis questions are preserved without accepting unsolicited later stages', async () => {
+  const { state, pending, response } = await setup();
+  const questions = Array.from({ length: 6 }, (_, index) => `需要研究者确认的条件 ${index + 1} 是什么？`);
+  const data = { ...analyze(state.context), questions, plan: { tasks: ['尚未确认的计划'] }, deep: { hypothesis: '尚未执行的深研' } };
+  const output = await completeSciencePalTask({ ...response, data }, pending, state);
+  assert.deepEqual(output.next.analysis?.questions, questions);
+  assert.equal(output.next.step, 2);
+  assert.equal(output.next.plan, null);
+  assert.equal(output.next.confirmation, null);
+  assert.equal(output.next.result, null);
+  assert.equal(output.next.evaluation, null);
+  assert.equal(Object.hasOwn(output.data, 'plan'), false);
+  assert.equal(Object.hasOwn(output.data, 'deep'), false);
+});
+
+test('analysis questions retain count, type and per-item text limits', () => {
+  const state = initialState(); state.context.problem = { ...exampleProblem };
+  const data = analyze(state.context);
+  const ten = Array.from({ length: 10 }, (_, index) => `待确认条件 ${index + 1}`);
+  assert.deepEqual(analysisSchema.parse({ ...data, questions: ten }).questions, ten);
+  assert.equal(analysisSchema.safeParse({ ...data, questions: [...ten, '第十一个问题'] }).success, false);
+  assert.equal(analysisSchema.safeParse({ ...data, questions: ['问'.repeat(6000)] }).success, true);
+  for (const item of [null, 1, {}, '', '   ', '问'.repeat(6001)]) {
+    assert.equal(analysisSchema.safeParse({ ...data, questions: ['有效问题', item] }).success, false);
+  }
 });
 
 test('changed input or forged run metadata never merges into current research', async () => {
@@ -132,3 +159,4 @@ test('independent stage tasks receive the supplied clarification history without
   assert.deepEqual(body.context, state.context);
   assert.equal(Object.hasOwn(sciencePalWorkflowBody(state), 'clarifications'), false);
 });
+

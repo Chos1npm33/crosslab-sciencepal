@@ -31,7 +31,7 @@ const draftContextSchema = z.object({
   mappings: mappingList, papers: paperList,
 });
 export const contextSchema = draftContextSchema.extend({ problem: problemSchema });
-export const analysisSchema = z.object({ summary: requiredText, hypothesis: requiredText, papers: paperList.refine(v => v.length > 0), mappings: mappingList.refine(v => v.length > 0), questions: z.array(requiredText).max(5) });
+export const analysisSchema = z.object({ summary: requiredText, hypothesis: requiredText, papers: paperList.refine(v => v.length > 0), mappings: mappingList.refine(v => v.length > 0), questions: z.array(requiredText).max(10) });
 export const planSchema = z.object({ fingerprint: hash, questions: textList.refine(v => v.length > 0), searches: textList, tasks: textList.refine(v => v.length > 0), stop: requiredText, scope: requiredText });
 export const resultSchema = z.object({ fingerprint: hash, hypothesis: requiredText, findings: z.array(z.object({ title: requiredText, body: requiredText, kind: z.enum(['evidence', 'inference', 'gap']), sourceIds: z.array(id).max(15) }).refine(f => f.kind !== 'evidence' || f.sourceIds.length > 0, '文献事实必须带有来源 ID')).min(1).max(40), experiment: textList, next: textList.refine(v => v.length > 0), completedAt: z.string().datetime() });
 export const evaluationSchema = z.object({ decision: z.enum(['继续验证', '补充条件后继续', '暂停当前迁移']), reason: requiredText, dimensions: z.array(z.object({ name: requiredText, level: z.enum(['较强', '一般', '较弱', '待验证']), reason: requiredText })).min(1).max(10).refine(v => new Set(v.map(d => d.name)).size === v.length), contribution: requiredText });
@@ -99,3 +99,4 @@ export function reportMarkdown(state: Workspace, mode: 'demo' | 'remote' | 'mixe
   lines.push('## 运行模式', modeDescription, `数据结构：${c.sampleType}；研究目标：${c.goal}；可补采样：${c.canCollect ? '是' : '否'}`);
   return lines.join('\n\n');
 }
+
