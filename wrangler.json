@@ -20,6 +20,10 @@
       {
         "name": "CROSSLAB_LOGIN_GUARD",
         "class_name": "LoginAttemptCounter"
+      },
+      {
+        "name": "CROSSLAB_RESEARCH_QUOTA",
+        "class_name": "ResearchQuota"
       }
     ]
   },
@@ -28,6 +32,12 @@
       "tag": "crosslab-login-v1",
       "new_sqlite_classes": [
         "LoginAttemptCounter"
+      ]
+    },
+    {
+      "tag": "crosslab-review-v1",
+      "new_sqlite_classes": [
+        "ResearchQuota"
       ]
     }
   ]

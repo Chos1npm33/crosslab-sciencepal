@@ -2,9 +2,13 @@ export interface AccessEnvironment {
   CROSSLAB_AUTH_REQUIRED?: string;
   CROSSLAB_ACCESS_CODE?: string;
   CROSSLAB_LOGIN_GUARD?: DurableObjectNamespace;
+  CROSSLAB_REVIEW_ENABLED?: string;
 }
+export type WebsiteGrant = { role: 'owner' | 'review'; visitorId: string };
 
 const COOKIE = '__Host-crosslab_access';
+const REVIEW_COOKIE = '__Host-crosslab_review';
+const REVIEW_SECONDS = 30 * 24 * 60 * 60;
 const SESSION_SECONDS = 8 * 60 * 60;
 const MAX_BODY_BYTES = 2048;
 const encoder = new TextEncoder();
@@ -51,11 +55,28 @@ export async function verifyAccessSession(token: string, secret: string, origin:
   } catch { return false; }
 }
 
-function sessionCookie(request: Request) {
+async function reviewSession(request: Request, secret: string): Promise<string | undefined> {
+  const token = sessionCookie(request, REVIEW_COOKIE);
+  const match = /^review\.v1\.(\d{1,12})\.([0-9a-f-]{36})\.([A-Za-z0-9_-]{43})$/.exec(token);
+  const now = Math.floor(Date.now() / 1000);
+  if (!match || Number(match[1]) <= now || Number(match[1]) > now + REVIEW_SECONDS) return undefined;
+  try {
+    const payload = token.slice(0, token.lastIndexOf('.'));
+    const signature = Uint8Array.from(atob(match[3].replaceAll('-', '+').replaceAll('_', '/') + '='), char => char.charCodeAt(0));
+    if (base64url(signature.buffer) !== match[3]) return undefined;
+    if (await crypto.subtle.verify('HMAC', await sessionKey(secret), signature, encoder.encode(`CrossLab review\n${new URL(request.url).origin}\n${payload}`))) return match[2];
+  } catch { /* Invalid cookies do not establish a trusted visitor. */ }
+}
+async function newReviewSession(secret: string, origin: string, visitorId: string) {
+  const payload = `review.v1.${Math.floor(Date.now() / 1000) + REVIEW_SECONDS}.${visitorId}`;
+  const signature = await crypto.subtle.sign('HMAC', await sessionKey(secret), encoder.encode(`CrossLab review\n${origin}\n${payload}`));
+  return `${REVIEW_COOKIE}=${payload}.${base64url(signature)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${REVIEW_SECONDS}`;
+}
+function sessionCookie(request: Request, name = COOKIE) {
   const cookies = request.headers.get('Cookie') || '';
   if (cookies.length > 8192) return '';
-  const values = cookies.split(';').map(value => value.trim()).filter(value => value.startsWith(`${COOKIE}=`));
-  return values.length === 1 ? values[0].slice(COOKIE.length + 1) : '';
+  const values = cookies.split(';').map(value => value.trim()).filter(value => value.startsWith(`${name}=`));
+  return values.length === 1 ? values[0].slice(name.length + 1) : '';
 }
 
 function privateResponse(response: Response, referrerPolicy: 'no-referrer' | 'same-origin' = 'no-referrer') {
@@ -115,7 +136,7 @@ async function sameCode(actual: string, expected: string) {
 }
 
 /** Enable the website access gate with CROSSLAB_AUTH_REQUIRED. */
-export async function withWebsiteAccess(request: Request, env: AccessEnvironment, next: () => Promise<Response>): Promise<Response> {
+export async function withWebsiteAccess(request: Request, env: AccessEnvironment, next: (grant?: WebsiteGrant) => Promise<Response>): Promise<Response> {
   if (env.CROSSLAB_AUTH_REQUIRED !== 'true') return next();
   const secret = env.CROSSLAB_ACCESS_CODE;
   if (!secret || [...secret.trim()].length < 16 || secret.length > 256) return failure('网站访问口令尚未配置，请联系网站所有者。', 503);
@@ -127,6 +148,27 @@ export async function withWebsiteAccess(request: Request, env: AccessEnvironment
   }
   const login = url.pathname === '/__crosslab/login';
   const logout = url.pathname === '/__crosslab/logout';
+  if (env.CROSSLAB_REVIEW_ENABLED === 'true') {
+    const reviewPage = url.pathname === '/review' || url.pathname === '/review/';
+    const publicFile = (/^\/_next\/static\/[A-Za-z0-9_./-]+$/.test(url.pathname) && !url.pathname.includes('..')) || ['/examples/sciencepal-pilot.json', '/favicon.svg'].includes(url.pathname);
+    const reviewApi = ['/api/review/sciencepal', '/api/review/workflow'].includes(url.pathname);
+    if (reviewPage && ['GET', 'HEAD'].includes(request.method)) {
+      let visitorId = await reviewSession(request, secret);
+      const fresh = !visitorId;
+      visitorId ||= crypto.randomUUID();
+      const response = privateResponse(await next({ role: 'review', visitorId }), 'same-origin');
+      if (fresh) response.headers.append('Set-Cookie', await newReviewSession(secret, url.origin, visitorId));
+      return response;
+    }
+    if (publicFile && ['GET', 'HEAD'].includes(request.method)) return privateResponse(await next());
+    if (reviewApi) {
+      if (!['GET', 'POST'].includes(request.method)) return failure('请求方法无效。', 405);
+      if (request.method === 'POST' && request.headers.get('Origin') !== url.origin) return failure('请求来源无效。', 403);
+      const visitorId = await reviewSession(request, secret);
+      if (!visitorId) return failure('评审会话已过期，请重新打开 /review 入口。', 401);
+      return privateResponse(await next({ role: 'review', visitorId }));
+    }
+  }
   if ((login || logout) && request.method === 'POST') {
     if (request.headers.get('Origin') !== url.origin) return failure('请求来源无效。', 403);
     if (logout) return redirect('/__crosslab/login', `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
@@ -154,5 +196,6 @@ export async function withWebsiteAccess(request: Request, env: AccessEnvironment
     if ((request.method === 'GET' || request.method === 'HEAD') && request.headers.get('Accept')?.includes('text/html') && !url.pathname.startsWith('/api/')) return loginPage('', 401);
     return privateResponse(Response.json({ error: '登录已过期或尚未登录，请刷新页面重新输入网站访问口令。', loginPath: '/__crosslab/login' }, { status: 401 }));
   }
-  return privateResponse(await next());
+  return privateResponse(await next({ role: 'owner', visitorId: 'owner' }));
 }
+

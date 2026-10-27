@@ -59,7 +59,7 @@ RESEARCH_PROVIDER_API_KEY=your-private-gateway-key
 
 ```bash
 node tests/run.mjs
-node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs
+node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs tests/review-worker.test.mjs tests/review-integration.test.mjs
 node node_modules/typescript/bin/tsc --noEmit
 node scripts/run-framework.mjs build
 ```
@@ -70,7 +70,7 @@ node scripts/run-framework.mjs build
 
 站点：[CrossLab 研究工作台](https://crosslab-sciencepal.hytao0591.workers.dev/)。使用网站访问口令登录。每次推送到 `main` 后，GitHub Actions 完成测试、类型检查和构建，再自动部署到 Cloudflare Workers。
 
-页面、API 和静态文件均需口令登录，会话持续 8 小时；预览 URL 保持关闭。SciencePal 密钥保存在 Cloudflare Production Secrets。口令设置、部署凭据轮换和验收记录见[自动部署说明](docs/github-deployment.md)。
+评审使用[免登录入口](https://crosslab-sciencepal.hytao0591.workers.dev/review)，可选择预置演示或真实 SciencePal；真实任务全站累计最多 30 次、每浏览器最多 8 次，查询进度与查看案例不扣次数。其余工作区和 API 继续使用口令登录，预览 URL 保持关闭。SciencePal 密钥保存在 Cloudflare Production Secrets。[评审权限、链接和额度说明](docs/review-access.md)记录了原生 Agent 仍需评审邮箱授权这一待办。口令设置与部署记录见[自动部署说明](docs/github-deployment.md)。
 
 ## 代码与文档
 
@@ -89,3 +89,4 @@ node scripts/run-framework.mjs build
 - [官方 SDK 核对记录](docs/sciencepal-sdk-contract.md)
 - [功能验收清单](docs/acceptance.md)
 - [真实研究验收记录](docs/sciencepal-pilot-acceptance.md)
+

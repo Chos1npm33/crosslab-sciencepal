@@ -11,6 +11,11 @@ import { directions, initialState, problemSchema, analysisSchema, planSchema, re
 
 const STORAGE = 'crosslab-workspace-v1';
 const SCIENCEPAL_STORAGE = 'crosslab-sciencepal-session-v1';
+const REVIEW_STORAGE = 'crosslab-review-workspace-v1';
+const REVIEW_SCIENCEPAL_STORAGE = 'crosslab-review-sciencepal-session-v1';
+const quotaSchema = z.object({ totalLimit: z.number().int().nonnegative(), totalUsed: z.number().int().nonnegative(), totalRemaining: z.number().int().nonnegative(), visitorLimit: z.number().int().nonnegative(), visitorUsed: z.number().int().nonnegative(), visitorRemaining: z.number().int().nonnegative(), retryAfterSeconds: z.number().nonnegative().optional() });
+const configSchema = z.object({ mode: z.enum(['demo', 'remote', 'sciencepal']), ready: z.boolean(), hasApiKey: z.boolean().optional(), hasAgentId: z.boolean().optional(), missing: z.array(z.string()).optional(), quota: quotaSchema.optional() });
+type ReviewQuota = z.infer<typeof quotaSchema>;
 const steps = [ ['研究问题', '明确现象与条件'], ['跨界方向', '选择可借鉴的方法'], ['文献分析', '查看贡献与适用范围'], ['交互修正', '审查映射与前提'], ['确认与深研', '按确认后的计划执行'], ['方案评估', '形成下一步研究方案'] ];
 const titles = ['从你的研究问题开始。', '让问题遇见另一种解法。', '用文献，建立跨界的依据。', '好的研究，来自一次关键修正。', '确认这一步，再向前研究。', '把灵感带到下一次验证。'];
 const subtitles = ['填写研究问题与手头条件。具体的信息，会帮助系统提出更有用的跨界方向。', '选择一张方法卡片，也可以填写一个具体理论、算法或研究领域。', '先查看文献贡献，再判断它能为你的问题提供什么。', '确认对应关系，补充真实条件。你的修改将进入新的研究计划。', '检查问题、范围和停止条件。只有你确认后，系统才会开始深入研究。', '分别判断合理性、创意性和可行性，保留支持证据与尚待解决的问题。'];
@@ -27,11 +32,20 @@ function Tag({ children }: { children: ReactNode }) { return <span className="ta
 function CardField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <div className="card field-card"><div className="section-label">{label}</div>{hint && <p className="muted">{hint}</p>}{children}</div>; }
 function Icon({ name }: { name: string }) { return name === 'network' ? <Network size={22} /> : name === 'waves' ? <Waves size={22} /> : name === 'focus' ? <Focus size={22} /> : name === 'plus' ? <Plus size={22} /> : <Layers3 size={22} />; }
 
-export default function Workbench() {
-  const [state, setState] = useState<Workspace>(initialState);
-  const [draft, setDraft] = useState<Context>(() => initialState().context);
+export default function Workbench({ reviewMode = false }: { reviewMode?: boolean } = {}) {
+  const storageKey = reviewMode ? REVIEW_STORAGE : STORAGE;
+  const sciencePalStorageKey = reviewMode ? REVIEW_SCIENCEPAL_STORAGE : SCIENCEPAL_STORAGE;
+  const [state, setState] = useState<Workspace>(() => reviewMode ? resetForExample(initialState(), 'wheat-genomics') : initialState());
+  const [draft, setDraft] = useState<Context>(() => reviewMode ? resetForExample(initialState(), 'wheat-genomics').context : initialState().context);
   const [ready, setReady] = useState(false);
-  const [showcase, setShowcase] = useState(false);
+  const [showcase, setShowcase] = useState(reviewMode);
+  const [reviewChoice, setReviewChoice] = useState<'demo' | 'live'>('demo');
+  const [reviewReplay, setReviewReplay] = useState(false);
+  const [quota, setQuota] = useState<ReviewQuota | null>(null);
+  const [quotaIssue, setQuotaIssue] = useState('');
+  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [fieldPicker, setFieldPicker] = useState(false);
   const [examplePicker, setExamplePicker] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
@@ -62,18 +76,22 @@ export default function Workbench() {
   const selectedExample = matchingExample(draft);
   const availableExamples = researchExamples.filter(e => e.fields.some(f => draft.problem.field.includes(f))); 
   const dirty = JSON.stringify(draft) !== JSON.stringify(c);
+  const quotaExhausted = !!quota && (quota.totalRemaining === 0 || quota.visitorRemaining === 0);
+  const reviewCanStart = serviceReady && !!quota && !quotaExhausted && !quotaIssue && cooldownSeconds === 0;
+  const researchUnavailable = reviewMode && reviewChoice === 'live' && !reviewCanStart;
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [state.step]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const raw = localStorage.getItem(STORAGE);
+        const raw = localStorage.getItem(storageKey);
         if (raw) {
           const saved = JSON.parse(raw);
           const restored = await restoreWorkspace(saved.state);
           if (mounted) {
             stateRef.current = restored; setState(restored); setDraft(restored.context); setShowcase(saved.showcase === true);
+            if (reviewMode) { setReviewChoice(saved.reviewChoice === 'live' ? 'live' : 'demo'); setReviewReplay(saved.reviewReplay === true); }
             setRuns(z.array(runSchema).max(100).parse(saved.runs || []));
             const snapshots: Snapshot[] = [];
             for (const s of (Array.isArray(saved.history) ? saved.history.slice(-8) : [])) {
@@ -82,22 +100,23 @@ export default function Workbench() {
             setHistory(snapshots);
           }
         }
-        const savedSession = localStorage.getItem(SCIENCEPAL_STORAGE);
+        const savedSession = localStorage.getItem(sciencePalStorageKey);
         if (savedSession && mounted) {
           const session = sciencepalSessionSchema.parse(JSON.parse(savedSession));
           priorTicketRef.current = session.priorTicket;
           pendingRef.current = session.pending; setPending(session.pending); setSciencePalAnswer(session.pending?.reply?.message || '');
-          if (session.pending) setNotice('已恢复 SciencePal 任务记录。点击“继续查询”即可查看原任务，不会重复发起研究。');
+          if (session.pending) { setNotice('已恢复 SciencePal 任务记录。点击“继续查询”即可查看原任务，不会重复发起研究。'); if (reviewMode) { setReviewChoice('live'); setShowcase(false); setReviewReplay(false); } }
         }
       } catch { if (mounted) setNotice('上次保存的项目格式已变化，已打开新的研究。你仍可导入备份项目。'); }
       finally { if (mounted) setReady(true); }
     })();
-    fetch('/api/workflow').then(r => r.json()).then(raw => { const data = z.object({ mode: z.enum(['demo', 'remote', 'sciencepal']), ready: z.boolean(), hasApiKey: z.boolean().optional(), hasAgentId: z.boolean().optional(), missing: z.array(z.string()).optional() }).parse(raw); if (mounted) { setMode(data.mode); setServiceReady(data.ready); setMissingConfig(data.missing || (data.mode === 'sciencepal' ? [...(data.hasApiKey === false ? ['SCIENCEPAL_API_KEY'] : []), ...(data.hasAgentId === false ? ['SCIENCEPAL_AGENT_ID'] : [])] : data.mode === 'remote' && !data.ready ? ['RESEARCH_PROVIDER_URL'] : [])); } }).catch(() => { if (mounted) { setServiceReady(false); setMissingConfig(['无法读取 /api/workflow 配置状态']); } });
+    fetch(reviewMode ? '/api/review/workflow' : '/api/workflow', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('配置读取未完成'); return response.json(); }).then(raw => { const data = configSchema.parse(raw); if (mounted) { setMode(data.mode); setServiceReady(data.ready); setMissingConfig(data.missing || (data.mode === 'sciencepal' ? [...(data.hasApiKey === false ? ['SCIENCEPAL_API_KEY'] : []), ...(data.hasAgentId === false ? ['SCIENCEPAL_AGENT_ID'] : [])] : data.mode === 'remote' && !data.ready ? ['RESEARCH_PROVIDER_URL'] : [])); if (reviewMode) applyReviewQuota(data.quota); } }).catch(() => { if (mounted) { setServiceReady(false); if (reviewMode) setQuotaIssue('暂时无法读取体验额度，请刷新额度后再试。'); else setMissingConfig(['无法读取 /api/workflow 配置状态']); } });
     fetch('/examples/sciencepal-pilot.json', { method: 'HEAD' }).then(r => { if (mounted) setPilotReady(r.ok); }).catch(() => {});
     return () => { mounted = false; requestController.current?.abort(); };
-  }, []);
+  }, [reviewMode, storageKey, sciencePalStorageKey]);
 
-  useEffect(() => { if (ready) { try { localStorage.setItem(STORAGE, JSON.stringify({ state, runs, history, showcase })); setStorageIssue(false); } catch { setStorageIssue(true); } } }, [state, runs, history, ready, showcase]);
+  useEffect(() => { if (ready) { try { localStorage.setItem(storageKey, JSON.stringify({ state, runs, history, showcase, ...(reviewMode ? { reviewChoice, reviewReplay } : {}) })); setStorageIssue(false); } catch { setStorageIssue(true); } } }, [state, runs, history, ready, showcase, storageKey, reviewMode, reviewChoice, reviewReplay]);
+  useEffect(() => { if (!cooldownUntil) { setCooldownSeconds(0); return; } const update = () => { const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)); setCooldownSeconds(remaining); if (!remaining) setCooldownUntil(0); }; update(); const timer = setInterval(update, 1000); return () => clearInterval(timer); }, [cooldownUntil]);
   useEffect(() => { if (!dirty) return; const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
   useEffect(() => {
     if (!modal && !activePaper) return;
@@ -118,6 +137,39 @@ export default function Workbench() {
   }, [modal, activePaper]);
 
   function commit(next: Workspace) { stateRef.current = next; setState(next); setDraft(next.context); setError(''); }
+  function applyReviewQuota(value: unknown) {
+    const parsed = quotaSchema.safeParse(value);
+    if (!parsed.success) { setQuotaIssue('暂时无法读取体验额度，请刷新额度后再试。'); return; }
+    setQuota(parsed.data); setQuotaIssue('');
+    const seconds = parsed.data.retryAfterSeconds || 0;
+    setCooldownUntil(seconds ? Date.now() + seconds * 1000 : 0); setCooldownSeconds(Math.ceil(seconds));
+  }
+  async function refreshReviewQuota() {
+    if (!reviewMode) return;
+    setQuotaRefreshing(true);
+    try {
+      const response = await fetch('/api/review/workflow', { cache: 'no-store' });
+      if (!response.ok) throw new Error('额度读取未完成');
+      const data = configSchema.parse(await response.json());
+      setMode(data.mode); setServiceReady(data.ready); applyReviewQuota(data.quota);
+    } catch { setQuotaIssue('暂时无法读取体验额度，请刷新额度后再试。'); }
+    finally { setQuotaRefreshing(false); }
+  }
+  function selectReviewMode(choice: 'demo' | 'live') {
+    if (busy || pendingRef.current) { setError('请先完成当前任务，或结束任务跟踪后再切换体验。'); return; }
+    if (reviewChoice === choice && !reviewReplay) return;
+    archive(); const next = reviseContext(state, { ...draft, papers: [], mappings: [] }, true);
+    commit({ ...next, step: 0 }); setRuns([]); persistSciencePal(null, null);
+    setReviewChoice(choice); setReviewReplay(false); setShowcase(choice === 'demo');
+    setNotice(choice === 'live' ? '已切换为真实 SciencePal 研究。保留你的问题与条件，点击文献分析后才会使用体验额度。' : '已切换为预置案例演示。可完整体验六步流程，不消耗真实研究额度。');
+    if (choice === 'live') void refreshReviewQuota();
+  }
+  function ensureReviewAllowance() {
+    if (!reviewMode) return;
+    if (quotaExhausted) throw new Error(quota?.visitorRemaining === 0 ? '你的真实研究体验额度已用完。仍可查询已启动任务，或切换到案例演示与实测回放。' : '全站真实研究体验额度已用完。仍可查询已启动任务，或切换到案例演示与实测回放。');
+    if (cooldownSeconds) throw new Error(`请等待 ${cooldownSeconds} 秒再开始下一次真实研究。查询进度与案例演示可继续使用。`);
+    if (!reviewCanStart) throw new Error('真实研究暂不可用，请刷新额度后再试。案例演示仍可完整体验。');
+  }
   function archive() { if (state.analysis || state.result) setHistory(items => [...items, { savedAt: new Date().toISOString(), state: structuredClone(state), runs: structuredClone(runs) }].slice(-8)); }
   function editContext(patch: Partial<Context>) { setDraft(prev => ({ ...prev, ...patch })); }
   function editProblem(key: keyof Context['problem'], value: string) { setDraft(prev => ({ ...prev, problem: { ...prev.problem, [key]: value } })); }
@@ -132,15 +184,17 @@ export default function Workbench() {
     if (pendingRef.current) { setError('请先完成或结束当前任务跟踪，再选择演示案例。'); return; }
     archive(); const next = resetForExample(state, id); commit(next); setRuns([]); persistSciencePal(null, null);
     setShowcase(true); setExamplePicker(true); setFieldPicker(false);
+    if (reviewMode) { setReviewChoice('demo'); setReviewReplay(false); }
     setNotice('已填入案例及推荐方向。当前为预置流程演示，可编辑所有条件；不会调用外部 API。');
   }
   function leaveShowcase() {
+    if (reviewMode) { selectReviewMode('live'); return; }
     archive(); const next = reviseContext(state, draft, true); commit({ ...next, step: 0 }); setRuns([]); setShowcase(false);
     setNotice('已切换为网站配置的工作流。保留研究输入，后续分析将重新运行。');
   }
   function persistSciencePal(task: SciencePalPending | null, priorTicket = priorTicketRef.current) {
     pendingRef.current = task; priorTicketRef.current = priorTicket; setPending(task);
-    try { localStorage.setItem(SCIENCEPAL_STORAGE, JSON.stringify({ pending: task, priorTicket })); } catch { setStorageIssue(true); }
+    try { localStorage.setItem(sciencePalStorageKey, JSON.stringify({ pending: task, priorTicket })); } catch { setStorageIssue(true); }
   }
   function workflowBody(workspace: Workspace) {
     const submitted = [...runs.filter(record => record.inputRevision <= workspace.context.revision).flatMap(record => record.clarifications || []), ...(pendingRef.current?.clarifications || [])].filter(item => item.accepted);
@@ -149,13 +203,18 @@ export default function Workbench() {
   }
   async function sciencePalFetch(body: { op: 'start' | 'poll' | 'reply'; [key: string]: unknown }, signal: AbortSignal) {
     let response: Response; let raw: unknown;
-    try { response = await fetch('/api/sciencepal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }); raw = await response.json(); }
+    try { response = await fetch(reviewMode ? '/api/review/sciencepal' : '/api/sciencepal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }); raw = await response.json(); }
     catch (error) {
       if (body.op === 'reply') {
         const result = handleSciencePalFailure({ code: 'initiate_unknown', status: 'unknown', error: '提交补充信息后的响应中断，新任务启动状态待核对。请到 SciencePal 查看，避免重复提交。' }, pendingRef.current, 'reply');
         persistSciencePal(result.pending);
       }
       throw error;
+    }
+    if (reviewMode) {
+      const quotaResponse = z.object({ quota: quotaSchema.optional(), retryAfterSeconds: z.number().nonnegative().optional() }).safeParse(raw);
+      if (quotaResponse.success && quotaResponse.data.quota) applyReviewQuota({ ...quotaResponse.data.quota, retryAfterSeconds: quotaResponse.data.retryAfterSeconds ?? quotaResponse.data.quota.retryAfterSeconds });
+      if (body.op !== 'poll') void refreshReviewQuota();
     }
     if (!response.ok) {
       const { failure, pending: nextPending } = handleSciencePalFailure(raw, pendingRef.current, body.op);
@@ -173,7 +232,7 @@ export default function Workbench() {
         const validated = await completeSciencePalTask(raw, current, stateRef.current);
         const metadata = validated.completed.meta;
         const nextRuns = [...runs.filter(r => r.runId !== metadata.runId), { ...metadata, action: current.action, projectUrl: metadata.upstream?.projectUrl, clarifications: current.clarifications }].slice(-100);
-        try { localStorage.setItem(STORAGE, JSON.stringify({ state: validated.next, runs: nextRuns, history })); } catch { setStorageIssue(true); }
+        try { localStorage.setItem(storageKey, JSON.stringify({ state: validated.next, runs: nextRuns, history, showcase, ...(reviewMode ? { reviewChoice, reviewReplay } : {}) })); } catch { setStorageIssue(true); }
         commit(validated.next); setRuns(nextRuns);
         persistSciencePal(null, validated.completed.ticket);
         setSciencePalAnswer('');
@@ -194,6 +253,7 @@ export default function Workbench() {
     throw new SciencePalWaiting('任务仍在 SciencePal 运行。已保留任务记录，可稍后继续查询。');
   }
   async function startSciencePal<T>(action: Action, workspace: Workspace): Promise<T> {
+    ensureReviewAllowance();
     if (!serviceReady) throw new Error(`SciencePal 尚未配置：${missingConfig.join('、') || '请检查服务端配置'}。`);
     if (pendingRef.current) throw new Error('已有 SciencePal 任务。请先继续查询，或结束该任务的本地跟踪。');
     const controller = new AbortController(); requestController.current = controller;
@@ -221,6 +281,7 @@ export default function Workbench() {
       try {
         let resumed = task;
         if (answer) {
+          ensureReviewAllowance();
           const reply = task.reply?.message === answer ? task.reply : { message: answer, messageId: crypto.randomUUID() };
           const clarifications = [...task.clarifications.filter(item => item.messageId !== reply.messageId), { messageId: reply.messageId, question: task.question || 'SciencePal 请求补充信息', answer, submittedAt: new Date().toISOString(), accepted: false }].slice(-50);
           persistSciencePal({ ...task, reply, clarifications });
@@ -240,12 +301,13 @@ export default function Workbench() {
     setSciencePalAnswer(''); setNotice('已结束本地跟踪。平台任务可能仍在运行；开始新研究前请核对原任务。');
   }
   async function request<T>(action: Action, workspace: Workspace): Promise<T> {
-    if (showcase) {
+    if (showcase || (reviewMode && reviewChoice === 'demo')) {
+      if (reviewMode) { setReviewReplay(false); setShowcase(true); }
       const { data, meta } = await runShowcase(action, workspace);
       setRuns(old => [...old, { ...meta, action }].slice(-100));
       return data as T;
     }
-    if (mode === 'sciencepal') return startSciencePal<T>(action, workspace);
+    if (mode === 'sciencepal' || reviewMode) return startSciencePal<T>(action, workspace);
     if (!mode || !serviceReady) throw new Error(`研究接口尚未就绪：${missingConfig.join('、') || '正在检查配置'}。`);
     const controller = new AbortController(); requestController.current = controller;
     const timeout = setTimeout(() => controller.abort(), 65000);
@@ -324,6 +386,7 @@ export default function Workbench() {
   }
   async function importProject(file?: File, realCase = false) {
     if (!file) return;
+    if (reviewMode && pendingRef.current) { setError('请先完成当前任务，或结束任务跟踪后再载入项目。'); return; }
     await run('正在恢复项目', async () => {
       if (file.size > 4000000) throw new Error('项目文件超过 4 MB，请检查文件。');
       const saved = JSON.parse(await file.text()); const restored = await restoreWorkspace(saved.state);
@@ -333,6 +396,11 @@ export default function Workbench() {
       for (const s of (Array.isArray(saved.history) ? saved.history.slice(-8) : [])) snapshots.push({ savedAt: z.string().parse(s.savedAt), state: await restoreWorkspace(s.state), runs: z.array(runSchema).max(100).parse(s.runs || []) });
       if (state.analysis || state.result) snapshots.push({ savedAt: new Date().toISOString(), state, runs });
       setHistory(snapshots.slice(-8)); setShowcase(!realCase && saved.showcase === true); commit(restored); setRuns(restoredRuns); persistSciencePal(null, null); setNotice(realCase ? '已载入 SciencePal 实测案例。运行记录中可打开对应平台项目，核对真实产物。' : '项目和历史版本已恢复，继续上次的研究。');
+      if (reviewMode) {
+        const hasRealRuns = restoredRuns.some(record => record.upstream?.provider === 'SciencePal' || /SciencePal/i.test(record.provider));
+        setReviewChoice('demo'); setReviewReplay(hasRealRuns); setShowcase(!hasRealRuns);
+        setNotice(hasRealRuns ? '已载入历史研究记录。当前为回放，不会启动新的真实任务；可切换到真实研究重新分析。' : '已载入项目。当前使用预置演示，可继续六步流程；需要实时研究时请主动切换。');
+      }
     });
   }
   async function loadPilot() {
@@ -351,25 +419,38 @@ export default function Workbench() {
   const availablePapers = [...(state.analysis?.papers || []).map(paper => currentPapers.get(paper.id) || paper), ...c.papers.filter(paper => !state.analysis?.papers.some(original => original.id === paper.id))];
   const analysisNeedsRevisionContext = !!state.analysis && (runs.filter(record => record.action === 'analyze').at(-1)?.inputRevision ?? c.revision) < c.revision;
   const closeModal = () => { setModal(null); setActivePaper(null); };
+  const reviewQuotaMessage = quotaIssue || (quotaExhausted ? quota?.visitorRemaining === 0 ? '你的真实研究体验额度已用完。已启动的任务仍可查询，案例演示和实测回放可继续使用。' : '全站真实研究体验额度已用完。已启动的任务仍可查询，案例演示和实测回放可继续使用。' : cooldownSeconds > 0 ? `请等待 ${cooldownSeconds} 秒再发起下一次真实研究。` : !serviceReady ? '真实研究暂不可用，案例演示和实测回放可继续使用。' : '');
 
   return <>
     <a className="skip-link" href="#research-main">跳至研究内容</a>
-    <header className="app-header"><a className="brand" href="#" onClick={e => { e.preventDefault(); go(0); }}><span className="brand-mark"><ArrowUpRight size={26} /></span><span>CrossLab<small>跨界研究器</small></span></a><div className="header-actions"><span className="mode-badge"><span className="status-dot" />{showcase ? '案例演示' : mode === 'sciencepal' ? 'SciencePal' : mode === 'demo' ? '默认：演示' : mode === 'remote' ? '外部工作流' : '检查接口中'}</span><button className="btn ghost small" disabled={!!busy} onClick={() => { if (dirty) { setError('请先保存当前修改。'); return; } setModal('history'); }}><History size={16} />历史</button><button className="btn secondary small" disabled={!!busy || !ready || dirty} onClick={() => saveFile('crosslab-project.json', JSON.stringify({ state, runs, history }, null, 2))}><Download size={16} />保存项目</button><button className="btn ghost small" disabled={!!busy || dirty} onClick={() => projectInput.current?.click()} aria-label="导入项目"><Upload size={17} /></button><input ref={projectInput} className="sr-only" type="file" accept=".json" onChange={e => { void importProject(e.target.files?.[0]); e.target.value = ''; }} /><a href="https://sciencepal.ai/hackathon" target="_blank" rel="noreferrer" className="event-link">SciencePal 2026 <ArrowUpRight size={13} /></a></div></header>
+    <header className="app-header"><a className="brand" href="#" onClick={e => { e.preventDefault(); go(0); }}><span className="brand-mark"><ArrowUpRight size={26} /></span><span>CrossLab<small>跨界研究器</small></span></a><div className="header-actions"><span className="mode-badge"><span className="status-dot" />{reviewMode ? reviewReplay ? '真实案例回放' : reviewChoice === 'live' ? 'SciencePal · 实时研究' : '预置案例演示' : showcase ? '案例演示' : mode === 'sciencepal' ? 'SciencePal' : mode === 'demo' ? '默认：演示' : mode === 'remote' ? '外部工作流' : '检查接口中'}</span><button className="btn ghost small" disabled={!!busy} onClick={() => { if (dirty) { setError('请先保存当前修改。'); return; } setModal('history'); }}><History size={16} />历史</button><button className="btn secondary small" disabled={!!busy || !ready || dirty} onClick={() => saveFile('crosslab-project.json', JSON.stringify({ state, runs, history, showcase, ...(reviewMode ? { reviewChoice, reviewReplay } : {}) }, null, 2))}><Download size={16} />保存项目</button><button className="btn ghost small" disabled={!!busy || dirty || (reviewMode && !!pending)} onClick={() => projectInput.current?.click()} aria-label="导入项目"><Upload size={17} /></button><input ref={projectInput} className="sr-only" type="file" accept=".json" onChange={e => { void importProject(e.target.files?.[0]); e.target.value = ''; }} /><a href="https://sciencepal.ai/hackathon" target="_blank" rel="noreferrer" className="event-link">SciencePal 2026 <ArrowUpRight size={13} /></a></div></header>
     <div className="app-shell">
-      <aside className="sidebar"><div className="eyebrow">RESEARCH WORKSPACE</div><h2>一次有依据的跨界</h2><nav className="step-nav" aria-label="研究步骤">{steps.map(([title, description], i) => <button key={title} className={`${state.step === i ? 'active' : ''} ${i < state.step ? 'complete' : ''}`} aria-current={state.step === i ? 'step' : undefined} disabled={!ready || !!busy || !canVisit(state, i)} onClick={() => go(i)}><span className="step-dot">{i < state.step ? <Check size={15} /> : `0${i + 1}`}</span><span className="step-copy"><strong>{title}</strong><small>{description}</small></span>{state.step === i && <ChevronRight size={14} />}</button>)}</nav><div className="sidebar-bottom"><div className="small-symbol"><FlaskConical size={20} /></div><p>灵感 → 证据 → 可检验方案</p><small>先把一个问题研究清楚。</small><button className="btn ghost small" disabled={!!busy || dirty} onClick={() => { archive(); commit(initialState()); setRuns([]); setShowcase(false); setExamplePicker(false); persistSciencePal(null, null); setNotice('已新建研究。已分析的旧项目保留在历史中。'); }}><Plus size={14} />新建研究</button></div></aside>
+      <aside className="sidebar"><div className="eyebrow">RESEARCH WORKSPACE</div><h2>一次有依据的跨界</h2><nav className="step-nav" aria-label="研究步骤">{steps.map(([title, description], i) => <button key={title} className={`${state.step === i ? 'active' : ''} ${i < state.step ? 'complete' : ''}`} aria-current={state.step === i ? 'step' : undefined} disabled={!ready || !!busy || !canVisit(state, i)} onClick={() => go(i)}><span className="step-dot">{i < state.step ? <Check size={15} /> : `0${i + 1}`}</span><span className="step-copy"><strong>{title}</strong><small>{description}</small></span>{state.step === i && <ChevronRight size={14} />}</button>)}</nav><div className="sidebar-bottom"><div className="small-symbol"><FlaskConical size={20} /></div><p>灵感 → 证据 → 可检验方案</p><small>先把一个问题研究清楚。</small><button className="btn ghost small" disabled={!!busy || dirty || (reviewMode && !!pending)} onClick={() => { archive(); commit(initialState()); setRuns([]); setShowcase(reviewMode); setReviewChoice('demo'); setReviewReplay(false); setExamplePicker(false); persistSciencePal(null, null); setNotice('已新建研究。已分析的旧项目保留在历史中。'); }}><Plus size={14} />新建研究</button></div></aside>
       <main className="main-panel" id="research-main" aria-busy={!!busy}>
+        {reviewMode && <section className={`review-entry${state.step > 0 ? ' review-entry-compact' : ''}`} aria-label="免登录评审体验">
+          <div className="section-row"><div><div className="eyebrow">CROSSLAB · 免登录评审体验</div><h2>先看案例，也可以亲自研究。</h2></div><button className="text-link" disabled={quotaRefreshing} onClick={() => void refreshReviewQuota()}><RotateCcw size={14} />{quotaRefreshing ? '更新中' : '刷新额度'}</button></div>
+          <div className="review-quota" aria-live="polite"><div><span>你的真实研究额度</span><strong>{quota ? quota.visitorRemaining : '—'}<small> / {quota?.visitorLimit ?? 8} 次剩余</small></strong></div><div><span>全站共享额度</span><strong>{quota ? quota.totalRemaining : '—'}<small> / {quota?.totalLimit ?? 30} 次剩余</small></strong></div></div>
+          <p className="review-quota-help">每启动一个研究阶段或提交一次补充回答，使用 1 次额度。查询进度、案例演示和回放不扣量。</p>
+          <div className="card-grid review-options" role="group" aria-label="选择体验方式">
+            <button className={`choice-card ${reviewChoice === 'demo' ? 'active' : ''}`} aria-pressed={reviewChoice === 'demo'} disabled={!ready || !!busy || !!pending} onClick={() => selectReviewMode('demo')}><div className="choice-top"><BookOpen size={20} /><span className="radio-dot" /></div><strong className="choice-title">案例演示</strong><span className="choice-description">用基因组研究案例，逐步体验文献、修正、确认与评估。</span><span className="review-choice-note">预置材料与规则 · 不消耗额度</span></button>
+            <button className={`choice-card ${reviewChoice === 'live' ? 'active' : ''}`} aria-pressed={reviewChoice === 'live'} disabled={!ready || !!busy || !!pending} onClick={() => selectReviewMode('live')}><div className="choice-top"><FlaskConical size={20} /><span className="radio-dot" /></div><strong className="choice-title">真实 SciencePal 研究</strong><span className="choice-description">输入自己的问题，让 SciencePal 分析文献并审查跨界方法。</span><span className="review-choice-note">主动开始后使用额度 · 结果需等待</span></button>
+          </div>
+          <div className="review-links"><button className="text-link" disabled={!ready || !pilotReady || !!busy || dirty || !!pending} onClick={() => void loadPilot()}>载入完整实测案例 <ArrowRight size={14} /></button><a className="text-link" href="https://sciencepal.ai/share/3ca1139e-ee65-4dde-9ce9-a1aa7162346a" target="_blank" rel="noreferrer">SciencePal 实测记录（回放） <ExternalLink size={13} /></a></div>
+          {reviewQuotaMessage && <div className="notice warning review-quota-notice" role="status"><CircleHelp size={17} /><span>{reviewQuotaMessage}</span></div>}
+          {reviewReplay && <div className="notice compact"><History size={16} /><span>正在回放历史 SciencePal 产物，本轮没有启动新任务。继续生成内容将使用预置演示；实时研究请先选择上方“真实 SciencePal 研究”。</span></div>}
+        </section>}
         <div className="stage-heading"><div className="eyebrow"><span className="step-number">0{state.step + 1} / 06</span> CROSS-DOMAIN RESEARCH</div><h1>{titles[state.step]}</h1><p>{subtitles[state.step]}</p></div>
-        {!showcase && mode === 'demo' && <div className="notice compact"><FlaskConical size={16} /><span>默认运行使用预置文献和条件规则。各阶段标明实际来源；可交给 SciencePal 等工作流执行并导入产物。</span></div>}
-        {!showcase && !serviceReady && <div className="notice warning"><CircleHelp size={17} /><span>{mode === 'sciencepal' ? 'SciencePal 接入待配置' : '研究接口暂不可用'}{missingConfig.length > 0 && <>：<strong>{missingConfig.join('、')}</strong></>}。你可以继续编辑，或导出任务包进行交接。</span></div>}
-        {showcase && <section className="demo-guide" aria-label="案例演示提示"><div><span className="eyebrow">AI + GENOMICS · 案例演示</span><strong>{selectedExample?.title || '自由修订案例'}</strong><p>{selectedExample?.hints[state.step] || '编辑条件并检查当前研究计划。'}</p><small>真实论文概要 + 预置规则；本轮未实时检索、训练模型或开展实验。</small></div><button className="text-link" disabled={!!busy || !!pending} onClick={leaveShowcase}>使用实际工作流 <ArrowUpRight size={14} /></button></section>}
-        {pending && <section className="card sciencepal-task" aria-label="SciencePal 任务状态"><div className="section-row"><div className="eyebrow">SCIENCEPAL · 原任务跟踪</div><Tag>{pending.status === 'asked' ? '等待补充信息' : pending.status === 'unknown' ? '启动状态待核对' : pending.status === 'failed' ? '查询未完成' : busy ? '研究进行中' : '等待继续查询'}</Tag></div><h3>{({ analyze: '双侧文献分析', plan: '研究计划生成', deep: '已确认计划的深入研究', evaluate: '方案评估' })[pending.action]} · v{pending.workspace.context.revision}</h3><p className="muted">任务编号：{pending.runId || '等待平台确认'}。刷新或停止等待会保留这条任务记录。</p>{pending.projectUrl && <a className="text-link" href={pending.projectUrl} target="_blank" rel="noreferrer">查看 SciencePal 项目 <ExternalLink size={13} /></a>}{pending.error && <p className="task-warning">{pending.error}</p>}{pending.status === 'asked' && <div className="task-question"><label htmlFor="sciencepal-answer">SciencePal 的追问</label><p>{pending.question || '请前往 SciencePal 查看需补充的信息。'}</p><textarea id="sciencepal-answer" rows={3} maxLength={6000} value={sciencePalAnswer} disabled={!!busy} onChange={e => setSciencePalAnswer(e.target.value)} placeholder="补充研究条件，或说明暂不清楚的信息。" /><button className="btn primary small" disabled={!!busy || !sciencePalAnswer.trim() || dirty} onClick={() => void resumeSciencePal(sciencePalAnswer.trim())}>携带回答创建本阶段任务 <ArrowRight size={14} /></button></div>}<div className="task-actions"><button className="btn secondary small" disabled={!!busy || !pending.ticket || dirty} onClick={() => void resumeSciencePal()}><RotateCcw size={14} />继续查询原任务</button><a className="text-link" href={pending.projectUrl || 'https://sciencepal.ai/'} target="_blank" rel="noreferrer">到 SciencePal 核对 <ArrowUpRight size={13} /></a><button className="text-link" disabled={!!busy} onClick={stopTrackingSciencePal}>结束本地跟踪</button></div><small>各阶段携带当前研究上下文创建独立任务。刷新或继续查询会跟踪已创建的任务；结束本地跟踪后，平台任务可能仍在运行。</small></section>}
+        {!reviewMode && !showcase && mode === 'demo' && <div className="notice compact"><FlaskConical size={16} /><span>默认运行使用预置文献和条件规则。各阶段标明实际来源；可交给 SciencePal 等工作流执行并导入产物。</span></div>}
+        {!reviewMode && !showcase && !serviceReady && <div className="notice warning"><CircleHelp size={17} /><span>{mode === 'sciencepal' ? 'SciencePal 接入待配置' : '研究接口暂不可用'}{missingConfig.length > 0 && <>：<strong>{missingConfig.join('、')}</strong></>}。你可以继续编辑，或导出任务包进行交接。</span></div>}
+        {showcase && <section className="demo-guide" aria-label="案例演示提示"><div><span className="eyebrow">AI + GENOMICS · 案例演示</span><strong>{selectedExample?.title || '自由修订案例'}</strong><p>{selectedExample?.hints[state.step] || '编辑条件并检查当前研究计划。'}</p><small>真实论文概要 + 预置规则；本轮未实时检索、训练模型或开展实验。</small></div><button className="text-link" disabled={!!busy || !!pending} onClick={leaveShowcase}>{reviewMode ? '切换到真实研究' : '使用实际工作流'} <ArrowUpRight size={14} /></button></section>}
+        {pending && <section className="card sciencepal-task" aria-label="SciencePal 任务状态"><div className="section-row"><div className="eyebrow">SCIENCEPAL · 原任务跟踪</div><Tag>{pending.status === 'asked' ? '等待补充信息' : pending.status === 'unknown' ? '启动状态待核对' : pending.status === 'failed' ? '查询未完成' : busy ? '研究进行中' : '等待继续查询'}</Tag></div><h3>{({ analyze: '双侧文献分析', plan: '研究计划生成', deep: '已确认计划的深入研究', evaluate: '方案评估' })[pending.action]} · v{pending.workspace.context.revision}</h3><p className="muted">任务编号：{pending.runId || '等待平台确认'}。刷新或停止等待会保留这条任务记录。</p>{pending.projectUrl && <a className="text-link" href={pending.projectUrl} target="_blank" rel="noreferrer">查看 SciencePal 项目 <ExternalLink size={13} /></a>}{pending.error && <p className="task-warning">{pending.error}</p>}{pending.status === 'asked' && <div className="task-question"><label htmlFor="sciencepal-answer">SciencePal 的追问</label><p>{pending.question || '请前往 SciencePal 查看需补充的信息。'}</p><textarea id="sciencepal-answer" rows={3} maxLength={6000} value={sciencePalAnswer} disabled={!!busy} onChange={e => setSciencePalAnswer(e.target.value)} placeholder="补充研究条件，或说明暂不清楚的信息。" /><button className="btn primary small" disabled={!!busy || !sciencePalAnswer.trim() || dirty || researchUnavailable} onClick={() => void resumeSciencePal(sciencePalAnswer.trim())}>携带回答创建本阶段任务 <ArrowRight size={14} /></button></div>}<div className="task-actions"><button className="btn secondary small" disabled={!!busy || !pending.ticket || dirty} onClick={() => void resumeSciencePal()}><RotateCcw size={14} />继续查询原任务</button><a className="text-link" href={pending.projectUrl || 'https://sciencepal.ai/'} target="_blank" rel="noreferrer">到 SciencePal 核对 <ArrowUpRight size={13} /></a><button className="text-link" disabled={!!busy} onClick={stopTrackingSciencePal}>结束本地跟踪</button></div><small>各阶段携带当前研究上下文创建独立任务。刷新或继续查询会跟踪已创建的任务；结束本地跟踪后，平台任务可能仍在运行。</small></section>}
         {storageIssue && <div className="notice warning">浏览器保存空间不足。请点击“保存项目”下载备份。</div>}
         {notice && <div className="notice success" role="status"><Check size={16} />{notice}</div>}
         {error && <div className="notice error" role="alert"><CircleHelp size={17} /><span>{error}</span><button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={16} /></button></div>}
         {busy && <div className="busy-indicator" role="status"><LoaderCircle className="spin" size={19} /><span>{busy}…</span><button className="text-link" onClick={() => requestController.current?.abort()}>停止等待</button></div>}
         {!ready ? <div className="empty-state">正在打开工作台…</div> : <fieldset className="stage-fields" disabled={!!busy}>
         {state.step === 0 && <>
-          <div className="section-label section-row"><span>你的问题与研究条件</span><div className="example-actions">{pilotReady && <button className="text-link" disabled={dirty || !!pending} onClick={() => void loadPilot()}>载入 SciencePal 实测案例 <ArrowUpRight size={14} /></button>}</div></div>
+          <div className="section-label section-row"><span>你的问题与研究条件</span><div className="example-actions">{!reviewMode && pilotReady && <button className="text-link" disabled={dirty || !!pending} onClick={() => void loadPilot()}>载入 SciencePal 实测案例 <ArrowUpRight size={14} /></button>}</div></div>
           <div className="card-grid problem-grid"><CardField label="01 · 我在研究什么" hint="选择一个领域，从具体案例开始，也可以自由填写。">
             <label htmlFor="field">研究领域 <span className="required">*</span></label>
             <div className="picker-input"><input id="field" maxLength={200} value={draft.problem.field} onFocus={() => setFieldPicker(true)} onChange={e => { editProblem('field', e.target.value); setFieldPicker(true); }} placeholder="点击选择，例如：植物科学" aria-expanded={fieldPicker} aria-controls="research-field-options" /><button className="icon-button" aria-label="展开研究领域" aria-expanded={fieldPicker} onClick={() => setFieldPicker(!fieldPicker)}><ChevronRight size={18} /></button></div>
@@ -387,14 +468,14 @@ export default function Workbench() {
           <div className="context-strip"><span className="mini-label">目标问题</span><p>{c.problem.question}</p></div><div className="section-label">选择借鉴方向</div>
           <div className="card-grid" role="group" aria-label="跨界方法">{directions.map(d => <button key={d.id} className={`choice-card method-card ${draft.direction === d.id ? 'active' : ''}`} aria-pressed={draft.direction === d.id} onClick={() => editContext({ direction: d.id, method: d.method })}><div className="choice-top"><span className="choice-icon"><Icon name={d.icon} /></span><span className="radio-dot" /></div><Tag>{d.tag}</Tag><strong className="choice-title">{d.label}</strong><span className="choice-description">{d.description}</span><span className="method-name">{d.method || '填写你想借用的具体方法'} <ArrowUpRight size={14} /></span></button>)}</div>
           <CardField label="进一步指定方法" hint="可以从一个宽泛学科，细化到理论、算法或论文中的具体方法。"><label htmlFor="method" className="sr-only">具体方法</label><input id="method" value={draft.method} maxLength={400} onChange={e => editContext({ method: e.target.value })} placeholder="例如：最优传输中的非平衡分布匹配" /></CardField>
-          <div className="action-bar"><button className="btn secondary" onClick={() => { const next = directionState(); if (next) { setHandoffAction('analyze'); setModal('handoff'); } }}><Link2 size={16} />交给外部工作流</button><button className="btn primary" onClick={() => void analyze()}>开始文献分析 <ArrowRight size={17} /></button></div>
+          <div className="action-bar">{!reviewMode && <button className="btn secondary" onClick={() => { const next = directionState(); if (next) { setHandoffAction('analyze'); setModal('handoff'); } }}><Link2 size={16} />交给外部工作流</button>}<button className="btn primary" disabled={researchUnavailable} onClick={() => void analyze()}>开始文献分析 <ArrowRight size={17} /></button></div>
         </>}
         {state.step === 2 && <>
-          {!state.analysis ? <div className="empty-state"><BookOpen size={28} /><h2>先分析一组核心文献</h2><p>选择方法后，将呈现文献贡献、适用条件与迁移假说。</p><button className="btn primary" onClick={() => void analyze()}>分析当前方向 <ArrowRight size={16} /></button></div> : <>
+          {!state.analysis ? <div className="empty-state"><BookOpen size={28} /><h2>先分析一组核心文献</h2><p>选择方法后，将呈现文献贡献、适用条件与迁移假说。</p><button className="btn primary" disabled={researchUnavailable} onClick={() => void analyze()}>分析当前方向 <ArrowRight size={16} /></button></div> : <>
           {analysisNeedsRevisionContext && <div className="notice"><FileText size={16} /><span>这是首轮分析记录；当前研究条件已修订，请结合修订说明与最终评估阅读。</span></div>}
           <article className="hypothesis-card"><div className="eyebrow">WORKING HYPOTHESIS · 待验证</div><h2>初步研究构想</h2><Tag>{sourceFor('analyze')}</Tag><p>{state.analysis.hypothesis}</p><small>{state.analysis.summary}</small></article><div className="section-label section-row"><span>核心文献 <span className="muted">已选 {c.papers.length} 篇</span></span><button className="text-link" onClick={() => setModal('paper')}><Plus size={15} />添加论文</button></div>
           <div className="card-grid">{availablePapers.map(p => <article className={`card paper-card ${c.papers.some(x => x.id === p.id) ? 'included' : ''}`} key={p.id}><div className="paper-meta"><Tag>{p.role}</Tag><span>{p.year}</span><label className="paper-check"><input type="checkbox" checked={c.papers.some(x => x.id === p.id)} onChange={() => togglePaper(p)} aria-label={`纳入 ${p.title}`} />纳入</label></div><h3 className="paper-title">{p.title}</h3><div className="paper-details"><strong>论文贡献</strong><p>{p.contribution}</p><strong>对当前问题的启发</strong><p>{p.relevance}</p></div><div className="paper-boundary"><CircleHelp size={14} /><span>{p.boundary}</span></div><button className="text-link" onClick={() => setActivePaper(p)}>查看依据与来源 <ArrowUpRight size={14} /></button></article>)}</div>
-          <div className="action-bar"><button className="btn secondary" onClick={() => { setHandoffAction('analyze'); setModal('handoff'); }}><Upload size={15} />导入工作流分析</button><button className="btn primary" disabled={!c.papers.length} onClick={() => go(3)}>审查并修正映射 <ArrowRight size={17} /></button></div></>}
+          <div className="action-bar">{!reviewMode && <button className="btn secondary" onClick={() => { setHandoffAction('analyze'); setModal('handoff'); }}><Upload size={15} />导入工作流分析</button>}<button className="btn primary" disabled={!c.papers.length} onClick={() => go(3)}>审查并修正映射 <ArrowRight size={17} /></button></div></>}
         </>}
         {state.step === 3 && <>
           <div className="notice"><PencilLine size={17} /><span>逐项检查：外领域概念如何对应到你的研究？可以接受、保留待核实，或否定一个前提。</span></div>
@@ -402,13 +483,13 @@ export default function Workbench() {
           <div className="section-label">概念与条件映射</div>{draft.mappings.map((m, i) => <article className="card mapping-card" key={m.id}><div className="mapping-side"><span className="mini-label">外领域 · {m.id}</span><h3>{m.source}</h3><p className="muted">{c.method}</p></div><ArrowRight className="mapping-arrow" size={18} /><div className="mapping-side"><label htmlFor={`target-${m.id}`}>在我的研究中对应</label><textarea id={`target-${m.id}`} rows={2} value={m.target} onChange={e => editContext({ mappings: draft.mappings.map((v, j) => i === j ? { ...v, target: e.target.value } : v) })} /><label htmlFor={`condition-${m.id}`}>需要成立的条件</label><textarea id={`condition-${m.id}`} rows={2} value={m.condition} onChange={e => editContext({ mappings: draft.mappings.map((v, j) => i === j ? { ...v, condition: e.target.value } : v) })} /><div className="status-options" role="group" aria-label={`${m.source}的审查状态`}>{[{ value: 'accepted', label: '认可映射' }, { value: 'pending', label: '待核实' }, { value: 'rejected', label: '前提不成立' }].map(o => <button key={o.value} className={m.status === o.value ? 'selected' : ''} aria-pressed={m.status === o.value} onClick={() => editContext({ mappings: draft.mappings.map((v, j) => i === j ? { ...v, status: o.value as typeof m.status } : v) })}>{m.status === o.value && <Check size={13} />}{o.label}</button>)}</div></div></article>)}
           <div className="section-label">补充会改变判断的信息</div><div className="card-grid"><CardField label="我的数据与目标"><label htmlFor="review-sample">数据结构</label><select id="review-sample" value={draft.sampleType} onChange={e => editContext({ sampleType: e.target.value as Context['sampleType'] })}>{sampleOptions.map(o => <option value={o.value} key={o.value}>{o.title}</option>)}</select><label htmlFor="review-goal">研究目标</label><select id="review-goal" value={draft.goal} onChange={e => editContext({ goal: e.target.value as Context['goal'] })}><option value="mechanism">解释机制／过程</option><option value="prediction">预测或比较</option></select><div className="status-options"><button aria-pressed={draft.canCollect} className={draft.canCollect ? 'selected' : ''} onClick={() => editContext({ canCollect: true })}>可补实验</button><button aria-pressed={!draft.canCollect} className={!draft.canCollect ? 'selected' : ''} onClick={() => editContext({ canCollect: false })}>无法补实验</button></div></CardField><CardField label="我的补充与修正" hint={state.analysis?.questions[0]}><label htmlFor="review-note" className="sr-only">补充与修正</label><textarea id="review-note" rows={7} maxLength={4000} value={draft.note} onChange={e => editContext({ note: e.target.value })} placeholder="例如：实际只有单次采样，且目前无法补采样；希望先转向材料之间的比较。" /></CardField></div>
           <div className="section-label">目前具有什么证据</div><div className="card-grid three-col">{evidenceOptions.map(o => <button className={`choice-card ${draft.evidence === o.value ? 'active' : ''}`} key={o.value} aria-pressed={draft.evidence === o.value} onClick={() => editContext({ evidence: o.value })}><div className="choice-top"><span className="radio-dot" /></div><strong className="choice-title">{o.title}</strong><span className="choice-description">{o.description}</span></button>)}</div>
-          <div className="action-bar"><span className="muted">修正后，旧计划与结论将归档。</span><button className="btn primary" onClick={() => void buildPlan()}>保存修正，生成计划 <ArrowRight size={17} /></button></div>
+          <div className="action-bar"><span className="muted">修正后，旧计划与结论将归档。</span><button className="btn primary" disabled={researchUnavailable} onClick={() => void buildPlan()}>保存修正，生成计划 <ArrowRight size={17} /></button></div>
         </>}
         {state.step === 4 && state.plan && <>
-          <div className="section-label section-row"><span>研究计划 · v{c.revision}</span><Tag>{state.confirmation ? '已确认' : '等待你确认'}</Tag></div><div className="card-grid"><article className="card"><div className="section-label"><CircleHelp size={16} />要回答的问题</div><ol>{state.plan.questions.map(q => <li key={q}>{q}</li>)}</ol></article><article className="card"><div className="section-label"><BookOpen size={16} />研究范围</div><p>{state.plan.scope}</p><div className="divider" /><span className="mini-label">建议检索式 · 尚待执行</span>{state.plan.searches.map(q => <code className="query" key={q}>{q}</code>)}</article><article className="card"><div className="section-label"><CheckCheck size={16} />本次执行内容</div><ol>{state.plan.tasks.map(t => <li key={t}>{t}</li>)}</ol></article><article className="card"><div className="section-label"><Focus size={16} />停止条件</div><p>{state.plan.stop}</p><div className="divider" /><p className="muted">{showcase ? '本次在浏览器内按预置材料和条件规则生成方案，不调用外部 API。' : mode === 'sciencepal' ? '本次深研将携带当前研究条件与已确认计划，创建独立 SciencePal 任务。页面持续查询该任务；停止等待后可恢复。平台内部预算由 SciencePal 配置。' : '本次深研最多发起 1 次工作流请求，60 秒超时；重试由你发起。外部平台内部预算需在该平台设置。'}</p></article></div>
-          {!state.result ? <div className="action-bar"><button className="btn secondary" onClick={() => void confirmPlan(true)}><Link2 size={16} />确认并交接到工作流</button><button className="btn primary" onClick={() => void confirmPlan()}>{state.confirmation ? '重新执行已确认计划' : '确认计划并开始深研'} <ArrowRight size={17} /></button></div> : <><div className="section-label section-row"><span>深研产物</span><Tag>v{c.revision} · {runs.filter(r => r.action === 'deep').at(-1)?.provider || mode}</Tag></div><article className="hypothesis-card"><div className="eyebrow">REVISED HYPOTHESIS</div><h2>修订后的研究假说</h2><p>{state.result.hypothesis}</p></article><div className="card-grid">{state.result.findings.map((f, i) => <article className={`card result-card ${f.kind}`} key={i}><span className="finding-kind">{f.kind === 'evidence' ? '文献依据' : f.kind === 'inference' ? '迁移推论' : '证据缺口'}</span><h3>{f.title}</h3><p>{f.body}</p><div className="citation-row">{f.sourceIds.map(id => <button className="chip" key={id} onClick={() => setActivePaper(c.papers.find(p => p.id === id) || null)}><BookOpen size={12} />{id}</button>)}</div></article>)}</div><div className="action-bar"><button className="btn secondary" onClick={() => go(3)}><PencilLine size={15} />继续修正</button><button className="btn primary" onClick={() => void evaluate()}>评估研究方案 <ArrowRight size={17} /></button></div></>}
+          <div className="section-label section-row"><span>研究计划 · v{c.revision}</span><Tag>{state.confirmation ? '已确认' : '等待你确认'}</Tag></div><div className="card-grid"><article className="card"><div className="section-label"><CircleHelp size={16} />要回答的问题</div><ol>{state.plan.questions.map(q => <li key={q}>{q}</li>)}</ol></article><article className="card"><div className="section-label"><BookOpen size={16} />研究范围</div><p>{state.plan.scope}</p><div className="divider" /><span className="mini-label">建议检索式 · 尚待执行</span>{state.plan.searches.map(q => <code className="query" key={q}>{q}</code>)}</article><article className="card"><div className="section-label"><CheckCheck size={16} />本次执行内容</div><ol>{state.plan.tasks.map(t => <li key={t}>{t}</li>)}</ol></article><article className="card"><div className="section-label"><Focus size={16} />停止条件</div><p>{state.plan.stop}</p><div className="divider" /><p className="muted">{reviewMode ? reviewChoice === 'demo' ? '本次根据预置文献与条件规则生成演示方案，不消耗体验额度。' : '确认后开始真实 SciencePal 深研，使用 1 次额度。查询进度不扣量，停止等待后可继续查询。' : showcase ? '本次在浏览器内按预置材料和条件规则生成方案，不调用外部 API。' : mode === 'sciencepal' ? '本次深研将携带当前研究条件与已确认计划，创建独立 SciencePal 任务。页面持续查询该任务；停止等待后可恢复。平台内部预算由 SciencePal 配置。' : '本次深研最多发起 1 次工作流请求，60 秒超时；重试由你发起。外部平台内部预算需在该平台设置。'}</p></article></div>
+          {!state.result ? <div className="action-bar">{!reviewMode && <button className="btn secondary" onClick={() => void confirmPlan(true)}><Link2 size={16} />确认并交接到工作流</button>}<button className="btn primary" disabled={researchUnavailable} onClick={() => void confirmPlan()}>{state.confirmation ? '重新执行已确认计划' : '确认计划并开始深研'} <ArrowRight size={17} /></button></div> : <><div className="section-label section-row"><span>深研产物</span><Tag>v{c.revision} · {sourceFor('deep')}</Tag></div><article className="hypothesis-card"><div className="eyebrow">REVISED HYPOTHESIS</div><h2>修订后的研究假说</h2><p>{state.result.hypothesis}</p></article><div className="card-grid">{state.result.findings.map((f, i) => <article className={`card result-card ${f.kind}`} key={i}><span className="finding-kind">{f.kind === 'evidence' ? '文献依据' : f.kind === 'inference' ? '迁移推论' : '证据缺口'}</span><h3>{f.title}</h3><p>{f.body}</p><div className="citation-row">{f.sourceIds.map(id => <button className="chip" key={id} onClick={() => setActivePaper(c.papers.find(p => p.id === id) || null)}><BookOpen size={12} />{id}</button>)}</div></article>)}</div><div className="action-bar"><button className="btn secondary" onClick={() => go(3)}><PencilLine size={15} />继续修正</button><button className="btn primary" disabled={researchUnavailable} onClick={() => void evaluate()}>评估研究方案 <ArrowRight size={17} /></button></div></>}
         </>}
-        {state.step === 5 && <>{!state.evaluation ? <div className="empty-state"><h2>深研已完成</h2><p>接下来从五个维度评估当前研究方案。</p><button className="btn primary" onClick={() => void evaluate()}>开始评估</button></div> : <div className="report-block"><div className="meta-line"><Tag>分析：{sourceFor('analyze')}</Tag><Tag>深研：{sourceFor('deep')}</Tag><Tag>评估：{sourceFor('evaluate')}</Tag></div><article className={`decision-card ${state.evaluation.decision === '暂停当前迁移' ? 'stop' : ''}`}><div className="eyebrow">RESEARCH DECISION · v{c.revision}</div><h2>{state.evaluation.decision}</h2><p>{state.evaluation.reason}</p></article><div className="card-grid">{state.evaluation.dimensions.map(d => <article className="card dimension-card" key={d.name}><div className="section-row"><h3>{d.name}</h3><span className={`level ${d.level === '较弱' ? 'weak' : ''}`}>{d.level}</span></div><p>{d.reason}</p></article>)}</div><article className="card"><div className="section-label">候选新增贡献</div><p>{state.evaluation.contribution}</p></article><div className="card-grid"><article className="card"><div className="section-label">最小验证方案</div><ol>{state.result?.experiment.map((e, i) => <li key={i}>{e}</li>)}</ol></article><article className="card"><div className="section-label">下一步</div><ul>{state.result?.next.map((n, i) => <li key={i}>{n}</li>)}</ul></article></div><div className="action-bar"><button className="btn secondary" onClick={() => go(3)}><PencilLine size={16} />回到修正</button><div className="inline-fields"><button className="btn secondary" onClick={() => window.print()}>打印方案</button><button className="btn primary" onClick={exportReport}><Download size={16} />导出研究方案</button></div></div></div>}</>}
+        {state.step === 5 && <>{!state.evaluation ? <div className="empty-state"><h2>深研已完成</h2><p>接下来从五个维度评估当前研究方案。</p><button className="btn primary" disabled={researchUnavailable} onClick={() => void evaluate()}>开始评估</button></div> : <div className="report-block"><div className="meta-line"><Tag>分析：{sourceFor('analyze')}</Tag><Tag>深研：{sourceFor('deep')}</Tag><Tag>评估：{sourceFor('evaluate')}</Tag></div><article className={`decision-card ${state.evaluation.decision === '暂停当前迁移' ? 'stop' : ''}`}><div className="eyebrow">RESEARCH DECISION · v{c.revision}</div><h2>{state.evaluation.decision}</h2><p>{state.evaluation.reason}</p></article><div className="card-grid">{state.evaluation.dimensions.map(d => <article className="card dimension-card" key={d.name}><div className="section-row"><h3>{d.name}</h3><span className={`level ${d.level === '较弱' ? 'weak' : ''}`}>{d.level}</span></div><p>{d.reason}</p></article>)}</div><article className="card"><div className="section-label">候选新增贡献</div><p>{state.evaluation.contribution}</p></article><div className="card-grid"><article className="card"><div className="section-label">最小验证方案</div><ol>{state.result?.experiment.map((e, i) => <li key={i}>{e}</li>)}</ol></article><article className="card"><div className="section-label">下一步</div><ul>{state.result?.next.map((n, i) => <li key={i}>{n}</li>)}</ul></article></div><div className="action-bar"><button className="btn secondary" onClick={() => go(3)}><PencilLine size={16} />回到修正</button><div className="inline-fields"><button className="btn secondary" onClick={() => window.print()}>打印方案</button><button className="btn primary" onClick={exportReport}><Download size={16} />导出研究方案</button></div></div></div>}</>}
         {dirty && <div className="unsaved-bar"><span>卡片内容有未保存的修改</span><button className="text-link" onClick={() => { setDraft(c); setError(''); }}>放弃修改</button></div>}
         </fieldset>}
         <footer className="workspace-footer">CrossLab · SciencePal AI4Science Hackathon <span>{storageIssue ? '请下载备份' : dirty ? '草稿待确认' : '已保存在此浏览器'} · v{c.revision}</span></footer>
@@ -420,8 +501,9 @@ export default function Workbench() {
       {activePaper && <><div className="meta-line"><Tag>{activePaper.role}</Tag><span>{activePaper.year} · {activePaper.id}</span></div><h3>{activePaper.title}</h3><div className="report-section"><strong>论文贡献</strong><p>{activePaper.contribution}</p></div><div className="report-section"><strong>迁移到当前研究的启发</strong><p>{activePaper.relevance}</p></div><div className="report-section"><strong>适用范围</strong><p>{activePaper.boundary}</p></div><p className="muted">{activePaper.provenance}</p><a className="btn primary" href={activePaper.url} target="_blank" rel="noreferrer">打开原始文献 <ExternalLink size={15} /></a></>}
       {modal === 'paper' && <><label htmlFor="paper-title">论文题名</label><input id="paper-title" value={paperDraft.title} onChange={e => setPaperDraft(p => ({ ...p, title: e.target.value }))} /><div className="card-grid"><div><label htmlFor="paper-url">DOI 或链接</label><input id="paper-url" value={paperDraft.url} onChange={e => setPaperDraft(p => ({ ...p, url: e.target.value }))} placeholder="10.xxxx/… 或 https://…" /></div><div><label htmlFor="paper-year">发表年份</label><input id="paper-year" value={paperDraft.year} maxLength={10} onChange={e => setPaperDraft(p => ({ ...p, year: e.target.value }))} /></div></div><label htmlFor="paper-abstract">摘要或阅读笔记</label><textarea id="paper-abstract" rows={6} value={paperDraft.abstract} maxLength={5000} onChange={e => setPaperDraft(p => ({ ...p, abstract: e.target.value }))} /><p className="muted">材料以“用户录入”保存，深研时再核查来源和贡献。</p><button className="btn primary" onClick={addPaper}><Plus size={15} />加入研究</button></>}
       {modal === 'handoff' && <><div className="notice"><Link2 size={17} /><span>导出当前输入，在 SciencePal 或你选用的工作流中运行，再导入结构化结果。服务端 API 也已预留同一数据契约。</span></div><div className="card-grid"><article className="card"><span className="num">01</span><h3>导出任务包</h3><p>包含问题版本、论文、映射与结果格式。{handoffAction === 'deep' ? '已包含你的深研确认。' : '先完成双侧文献分析。'}</p><button className="btn secondary" onClick={() => void exportTask(handoffAction)}><Download size={15} />下载任务 JSON</button></article><article className="card"><span className="num">02</span><h3>在平台运行</h3><p>保留真实项目链接与运行编号。文献综合或迁移审查应在 SciencePal 中实质完成。</p><a className="text-link" href="https://sciencepal.ai/" target="_blank" rel="noreferrer">打开 SciencePal <ArrowUpRight size={14} /></a></article></div><label htmlFor="import-result">03 · 粘贴返回的 JSON 产物</label><textarea id="import-result" className="code-input" rows={9} value={importText} maxLength={120000} onChange={e => setImportText(e.target.value)} placeholder={'{ "schemaVersion": 1, "action": "' + handoffAction + '", … }'} /><p className="muted">系统校验字段、输入版本和引用标识。来源链接由提供者填写，显示为“用户导入”。</p><button className="btn primary" disabled={!!busy || !importText.trim()} onClick={() => void importOutput()}><Upload size={16} />校验并导入产物</button></>}
-      {modal === 'history' && <>{history.length === 0 ? <div className="empty-state"><History size={28} /><p>修改已分析的条件后，旧版本会保留在这里。</p></div> : history.slice().reverse().map((s, i) => <article className="card" key={`${s.savedAt}-${i}`}><div className="section-row"><strong>v{s.state.context.revision} · {s.state.context.problem.field}</strong><Tag>{s.state.result ? '有研究结果' : '分析中'}</Tag></div><p>{s.state.context.problem.question}</p><div className="section-row"><small className="muted">{new Date(s.savedAt).toLocaleString('zh-CN')}</small><button className="text-link" onClick={() => { archive(); commit(s.state); setRuns(s.runs); setModal(null); setNotice('已打开保存的历史版本。'); }}><RotateCcw size={14} />恢复这个版本</button></div></article>)}</>}
+      {modal === 'history' && <>{history.length === 0 ? <div className="empty-state"><History size={28} /><p>修改已分析的条件后，旧版本会保留在这里。</p></div> : history.slice().reverse().map((s, i) => <article className="card" key={`${s.savedAt}-${i}`}><div className="section-row"><strong>v{s.state.context.revision} · {s.state.context.problem.field}</strong><Tag>{s.state.result ? '有研究结果' : '分析中'}</Tag></div><p>{s.state.context.problem.question}</p><div className="section-row"><small className="muted">{new Date(s.savedAt).toLocaleString('zh-CN')}</small><button className="text-link" disabled={reviewMode && !!pending} onClick={() => { archive(); commit(s.state); setRuns(s.runs); if (reviewMode) { const hasRealRuns = s.runs.some(record => record.upstream?.provider === 'SciencePal' || /SciencePal/i.test(record.provider)); setReviewChoice('demo'); setReviewReplay(hasRealRuns); setShowcase(!hasRealRuns); persistSciencePal(null, null); } setModal(null); setNotice(reviewMode ? '已打开历史版本，当前为回放或预置演示。实时研究请主动切换。' : '已打开保存的历史版本。'); }}><RotateCcw size={14} />恢复这个版本</button></div></article>)}</>}
       {error && <div className="notice error" role="alert">{error}</div>}
     </div></div></div>}
   </>;
 }
+

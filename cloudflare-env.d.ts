@@ -6,5 +6,8 @@ declare namespace Cloudflare {
     CROSSLAB_AUTH_REQUIRED?: string;
     CROSSLAB_ACCESS_CODE?: string;
     CROSSLAB_LOGIN_GUARD?: DurableObjectNamespace;
+    CROSSLAB_REVIEW_ENABLED?: string;
+    CROSSLAB_RESEARCH_QUOTA?: DurableObjectNamespace;
   }
 }
+

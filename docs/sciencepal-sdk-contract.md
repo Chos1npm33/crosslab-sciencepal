@@ -35,7 +35,7 @@
 
 `/workspace/crosslab/{requestId}.json` 及 `{schemaVersion, requestId, action, contextFingerprint, status, data}` 是 **CrossLab 给 Agent 的输出约定**，并非 SciencePal 自带科研结果格式。Agent 须有文件工具并按提示保存产物。文件不存在或结构错误时，平台运行完成也不等于网站结果验收完成。追问文件缺失且 SSE 未返回正文时，网站提示到原会话查看；取得问题后，将问题与回答带入新任务。
 
-启动超时且未收到线程号时，已核实的 SDK 契约无法让网站按本地 `requestId` 找回新线程；需在平台核对。`requestId` 不是官方启动幂等键。服务端对同一活跃进程中的请求保留最长 24 小时的回执；进程重启、不同 Worker 或缓存过期之后没有全局去重保证。已有未知提交应查询或核对原任务，不重新发起。
+启动超时且未收到线程号时，已核实的 SDK 契约无法让网站按本地 `requestId` 找回新线程；需在平台核对。`requestId` 不是官方启动幂等键。2026-10-27 评审部署通过固定 SQLite Durable Object 统一持久保存任务预留与回执，同一请求即使跨 Worker 或重启也不会重复派发；未知启动保留占额。未启用评审预算的本地或独立部署仍使用最长 24 小时的进程内回执，不具有跨 Worker 去重保证。已有未知提交应查询或核对原任务，不重新发起。
 
 签名票据保存历史请求 ID，阻止新阶段覆盖已使用的产物路径。最终产物只有同时匹配当前票据的请求 ID、动作、上下文指纹并通过研究数据校验，才会进入网站。旧票据不能授权新版本的深研。
 
@@ -46,3 +46,4 @@
 本地测试 `node --test tests/sciencepal-worker.test.mjs` 使用项目 Wrangler 自带的 Miniflare/workerd 和相同兼容配置，实际执行环境绑定读取、票据签名、校验、错误密钥拒绝，以及原生 HTTP 请求路径；2026-10-24 通过。测试仅连接本机 Worker，并在网络边界模拟上游。服务端契约测试运行 `node tests/run.mjs`。这些测试不代表真实 SciencePal 账户运行已通过。
 
 实测 workerd 不支持 `fetch` 的 `redirect: "error"`，会在发出请求前立即抛出 `TypeError`；Node 支持该取值。服务端因此使用 `redirect: "manual"` 并显式拒绝所有 3xx，避免转发凭据。修复后，用无凭据只读 GET 验证 Node 与本地 workerd 均可到达官方 API，得到预期的 HTTP 401。
+

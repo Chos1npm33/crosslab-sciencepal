@@ -36,7 +36,7 @@ test('production Worker supports ticket crypto, env bindings and the native fetc
           keyAbsent: !signed.includes(key), tamperRejected, nativeStatus: native.httpStatus });
       }};`, resolveDir: process.cwd(), sourcefile: 'sciencepal-worker-check.ts', loader: 'ts' },
     bundle: true, platform: 'neutral', format: 'esm', target: 'es2022',
-    external: ['node:buffer'], write: false,
+    external: ['node:*'], write: false,
   });
   let outboundCalls = 0;
   const runtime = new Miniflare({ modules: true, script: bundled.outputFiles[0].text,
@@ -57,3 +57,4 @@ test('production Worker supports ticket crypto, env bindings and the native fetc
     assert.equal(outboundCalls, 1);
   } finally { await runtime.dispose(); }
 });
+

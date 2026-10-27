@@ -17,6 +17,9 @@ const modules = [
   ['lib/sciencepal-client.ts', 'lib/sciencepal-client.mjs'],
   ['app/api/workflow/route.ts', 'app/api/workflow/route.mjs'],
   ['server/lib/sciencepal.ts', 'server/lib/sciencepal.mjs'],
+  ['server/lib/review-context.ts', 'server/lib/review-context.mjs'],
+  ['server/lib/http-body.ts', 'server/lib/http-body.mjs'],
+  ['tests/http-body.test.ts', 'tests/http-body.test.mjs'],
   ['app/api/sciencepal/route.ts', 'app/api/sciencepal/route.mjs'],
   ['tests/sciencepal.test.ts', 'tests/sciencepal.test.mjs'],
   ['tests/sciencepal-client.test.ts', 'tests/sciencepal-client.test.mjs'],
@@ -35,6 +38,10 @@ for (const [source, destination] of modules) {
     .replaceAll("'../lib/examples'", "'../lib/examples.mjs'")
     .replaceAll("'../lib/showcase'", "'../lib/showcase.mjs'")
     .replaceAll("'./research'", "'./research.mjs'")
+    .replaceAll("'./review-context'", "'./review-context.mjs'")
+    .replaceAll("'../../../server/lib/review-context'", "'../../../server/lib/review-context.mjs'")
+    .replaceAll("'../../../server/lib/http-body'", "'../../../server/lib/http-body.mjs'")
+    .replaceAll("'../server/lib/http-body'", "'../server/lib/http-body.mjs'")
     .replaceAll("'./workflow-provenance'", "'./workflow-provenance.mjs'")
     .replaceAll("'../../lib/research'", "'../../lib/research.mjs'")
     .replaceAll("'../server/lib/sciencepal'", "'../server/lib/sciencepal.mjs'")
@@ -46,5 +53,6 @@ for (const [source, destination] of modules) {
     .replaceAll("'../app/api/sciencepal/route'", "'../app/api/sciencepal/route.mjs'");
   await writeFile(filename, code);
 }
-const result = spawnSync(process.execPath, ['--test', resolve(output, 'tests/examples.test.mjs'), resolve(output, 'tests/workflow.test.mjs'), resolve(output, 'tests/sciencepal.test.mjs'), resolve(output, 'tests/sciencepal-client.test.mjs')], { stdio: 'inherit' });
+const result = spawnSync(process.execPath, ['--test', resolve(output, 'tests/http-body.test.mjs'), resolve(output, 'tests/examples.test.mjs'), resolve(output, 'tests/workflow.test.mjs'), resolve(output, 'tests/sciencepal.test.mjs'), resolve(output, 'tests/sciencepal-client.test.mjs')], { stdio: 'inherit' });
 process.exitCode = result.status ?? 1;
+

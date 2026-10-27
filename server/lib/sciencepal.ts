@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Buffer } from 'node:buffer';
 import { contextSchema, analysisSchema, planSchema, resultSchema, evaluationSchema, confirmationSchema, fingerprint, hasValidCitations } from '../../lib/research';
+import { researchContext, reserveResearch, completeResearch, ReviewQuotaError } from './review-context';
 
 // Endpoints and response fields verified against the official SDK 0.2.1 wheel.
 // SHA256: 9b732dbd779332c4064088a1f00efd1348f29758bb26d7aed86ec172589d559e
@@ -21,6 +22,7 @@ const ticketSchema = z.object({
   question: z.string().max(10000).optional(), previousRun: previousRunSchema.optional(),
   phase: z.enum(['running', 'asked', 'completed', 'unknown']),
   startedAt: z.string().datetime(), expiresAt: z.number().int(),
+  audience: z.string().max(120).optional(),
 });
 export type SciencePalTicket = z.infer<typeof ticketSchema>;
 export const sciencePalRequestSchema = z.object({
@@ -63,6 +65,11 @@ export async function verifySciencePalTicket(token: string, key: string): Promis
     if (!await crypto.subtle.verify('HMAC', await signingKey(key), Buffer.from(signature, 'base64url'), new TextEncoder().encode(payload))) throw new Error('signature');
     const value = ticketSchema.parse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')));
     if (value.expiresAt < Date.now()) throw new Error('expired');
+    const context = researchContext();
+    if (context) {
+      const audience = context.role === 'owner' ? 'owner' : `review:${context.visitorId}`;
+      if (value.audience !== audience && !(context.role === 'owner' && !value.audience)) throw new Error('audience');
+    }
     return value;
   } catch { throw new SciencePalError('运行凭据无效或已过期，请到 SciencePal 核对已有任务。', 409, 'invalid_ticket'); }
 }
@@ -141,6 +148,36 @@ async function checkPriorRun(key: string, prior: SciencePalTicket, expected: 'as
   if (run.status !== expected) throw new SciencePalError(expected === 'asked' ? '原任务当前没有等待回答，请先查询它的最新状态。' : '原任务尚未完成，请先查询已有运行。', 409, expected === 'asked' ? 'not_asked' : 'prior_not_completed', { mutationStarted: false });
 }
 async function launchStage(key: string, agentId: string, input: Input, action: Action, fp: string, prior?: SciencePalTicket) {
+  const context = researchContext();
+  if (!context) return launchStageUnmetered(key, agentId, input, action, fp, prior);
+  const requestId = input.requestId || input.messageId;
+  if (!requestId) throw new SciencePalError('启动研究需要稳定的请求编号，请刷新后重试。', 400, 'request_id_required', { mutationStarted: false });
+  const priorIds = prior?.requestIds || (prior ? [prior.requestId] : []);
+  if (priorIds.includes(requestId)) throw new SciencePalError('此请求 ID 已用于先前产物。', 409, 'message_id_reused', { mutationStarted: false });
+  const admission = await reserveResearch(requestId, await hashText(JSON.stringify({ input, action, fp })));
+  if (admission.kind === 'replay') {
+    if (admission.response.httpStatus >= 400) {
+      const body = admission.response.body;
+      throw new SciencePalError(typeof body.error === 'string' ? body.error : '原请求结果尚未确认。', admission.response.httpStatus, typeof body.code === 'string' ? body.code : 'initiate_unknown', { ...body, quota: admission.quota });
+    }
+    const body = z.object({ mode: z.literal('sciencepal'), status: z.enum(['running', 'asked']), action: actions, ticket: z.string(), runId: safeId.nullable(), threadId: safeId, inputFingerprint: z.string(), retryAfterMs: z.number(), previousRun: previousRunSchema.optional() }).parse(admission.response.body);
+    const ticket = await verifySciencePalTicket(body.ticket, key);
+    if (ticket.requestId !== requestId || ticket.inputFingerprint !== fp || ticket.action !== action) throw new SciencePalError('已保存的运行回执与当前请求不匹配。', 409, 'receipt_mismatch');
+    return { httpStatus: admission.response.httpStatus, body: { ...body, quota: admission.quota } };
+  }
+  try {
+    const result = await launchStageUnmetered(key, agentId, input, action, fp, prior);
+    const response = { ...result, body: { ...result.body, quota: admission.quota } };
+    await completeResearch(requestId, admission.claim, response);
+    return response;
+  } catch (error) {
+    const failure = error instanceof SciencePalError ? error : new SciencePalError('真实研究启动结果尚未确认，请核对已有任务。', 504, 'initiate_unknown', { status: 'unknown', requestId });
+    const body = { error: failure.message, code: failure.code, ...failure.extra, quota: admission.quota };
+    await completeResearch(requestId, admission.claim, { httpStatus: failure.status, body });
+    throw new SciencePalError(failure.message, failure.status, failure.code, { ...failure.extra, quota: admission.quota });
+  }
+}
+async function launchStageUnmetered(key: string, agentId: string, input: Input, action: Action, fp: string, prior?: SciencePalTicket) {
   const requestId = input.requestId || input.messageId || crypto.randomUUID();
   const requestIds = prior?.requestIds || (prior ? [prior.requestId] : []);
   if (requestIds.includes(requestId)) throw new SciencePalError('此请求 ID 已用于先前产物，请为本次阶段或回答生成新的 ID。', 409, 'message_id_reused', { mutationStarted: false });
@@ -158,7 +195,8 @@ async function launchStage(key: string, agentId: string, input: Input, action: A
     if (error instanceof SciencePalError && ['upstream_401', 'upstream_403'].includes(error.code)) throw error;
     throw new SciencePalError('SciencePal 本阶段启动结果未确认，请到平台核对；网站不会重发或切换启动方式。', 504, 'initiate_unknown', { status: 'unknown', requestId, diagnostic: { stage: 'initiate', upstreamStatus: error instanceof SciencePalError ? error.extra.upstreamStatus ?? upstreamStatus : upstreamStatus, cause: error instanceof SciencePalError ? error.code : error instanceof z.ZodError ? 'invalid_receipt' : 'unreadable_receipt' } });
   }
-  const ticket: SciencePalTicket = { v: 1, scope: 'crosslab-sciencepal', action, inputFingerprint: fp, inputRevision: input.context.revision, threadId: started.thread_id, runId: started.agent_run_id || null, requestId, requestIds: [...requestIds, requestId].slice(-100), knownRunIds: started.agent_run_id ? [started.agent_run_id] : [], phase: started.agent_run_id ? 'running' : 'unknown', startedAt, expiresAt: Date.now() + 86400000, ...(previousRun ? { previousRun } : {}) };
+  const access = researchContext();
+  const ticket: SciencePalTicket = { v: 1, scope: 'crosslab-sciencepal', action, inputFingerprint: fp, inputRevision: input.context.revision, threadId: started.thread_id, runId: started.agent_run_id || null, requestId, requestIds: [...requestIds, requestId].slice(-100), knownRunIds: started.agent_run_id ? [started.agent_run_id] : [], phase: started.agent_run_id ? 'running' : 'unknown', startedAt, expiresAt: Date.now() + 86400000, ...(previousRun ? { previousRun } : {}), ...(access ? { audience: access.role === 'owner' ? 'owner' : `review:${access.visitorId}` } : {}) };
   return runningResponse(key, ticket.runId ? ticket : await resolveUnknown(key, ticket));
 }
 async function readArtifact(key: string, ticket: SciencePalTicket) {
@@ -263,9 +301,20 @@ async function hashText(value: string) {
   return Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).toString('hex');
 }
 export async function handleSciencePal(input: Input) {
+  const access = researchContext();
   const { key, agentId } = credentials();
   const fp = await fingerprint(input.context);
   if (input.op === 'poll') return executeSciencePal(input, key, agentId, fp);
+  if (access) {
+    const stableId = input.op === 'reply' ? input.messageId : input.requestId || input.messageId;
+    if (!stableId) throw new SciencePalError('启动研究需要稳定的请求编号，请刷新后重试。', 400, 'request_id_required', { mutationStarted: false });
+    // Durable admissions, not process-local maps, own every production dispatch.
+    try { return await executeSciencePal({ ...input, requestId: stableId }, key, agentId, fp); }
+    catch (error) {
+      if (error instanceof ReviewQuotaError) throw new SciencePalError(error.message, error.status, error.code, error.extra);
+      throw error;
+    }
+  }
   const priorToken = input.op === 'reply' ? input.ticket : input.priorTicket;
   const prior = priorToken ? await verifySciencePalTicket(priorToken, key) : undefined;
   const stableId = input.op === 'reply' ? input.messageId : input.requestId || input.messageId || crypto.randomUUID();
@@ -297,3 +346,4 @@ export async function handleSciencePal(input: Input) {
   }
   finally { receipt.pending = false; if (threadScope) threadMutations.delete(threadScope); }
 }
+

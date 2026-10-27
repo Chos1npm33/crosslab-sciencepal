@@ -2,11 +2,13 @@
 
 `Chos1npm33/crosslab-sciencepal` 通过 `.github/workflows/deploy.yml` 部署到自己的 Cloudflare 账户。首次部署创建关闭外部 URL 的 Worker；设置网站访问口令后，再开启生产地址。网站使用自己的口令页，无需开通 Cloudflare Access 或 Zero Trust。
 
-## 2026-10-27 部署验收
+## 2026-10-27 口令版部署验收
 
 生产地址：[CrossLab 研究工作台](https://crosslab-sciencepal.hytao0591.workers.dev/)。[GitHub Actions 运行 40468621677](https://github.com/Chos1npm33/crosslab-sciencepal/actions/runs/40468621677) 已将提交 `fc9f5526a439c8b9c63f4de87681a41713c9ac76` 自动部署；68 项业务测试、20 项 Worker 测试、TypeScript 和构建通过。
 
-线上匿名访问主页、两个研究 API、静态 JS 和案例 JSON 均返回 401；登录表单返回 200，响应均禁止缓存。连续六次错误口令的结果为 `401, 401, 401, 401, 401, 429`，第六次携带等待时间。真实 Chrome 表单登录后已打开完整工作台，`/api/sciencepal` 返回 `ready: true`、`hasApiKey: true`、`hasAgentId: true`；SciencePal API Key 与 Agent ID 保存在 Production Secrets。
+当时的口令版验收中，匿名访问主页、两个研究 API、静态 JS 和案例 JSON 均返回 401；登录表单返回 200，响应均禁止缓存。连续六次错误口令的结果为 `401, 401, 401, 401, 401, 429`，第六次携带等待时间。真实 Chrome 表单登录后已打开完整工作台，`/api/sciencepal` 返回 `ready: true`、`hasApiKey: true`、`hasAgentId: true`；SciencePal API Key 与 Agent ID 保存在 Production Secrets。
+
+后续评审版增加 `/review` 免登录入口、限定公开资源与两个评审 API，并用独立 `ResearchQuota` SQLite Durable Object 管理全站 30 次、每浏览器 8 次的真实任务启动预算。所有者入口仍保留口令。详见[评审访问说明](review-access.md)。
 
 登录及退出表单使用 `Referrer-Policy: same-origin`，同时校验请求的 `Origin` 与网站来源一致。`no-referrer` 会使浏览器原生表单发送 `Origin: null`，从而被来源校验拒绝；这一表单策略已修复，空来源和外部来源继续被拒绝。
 
@@ -36,7 +38,7 @@ node node_modules/typescript/bin/tsc --noEmit
 pnpm build
 ```
 
-构建后，工作流将 `dist/server/wrangler.json` 中的 `workers_dev` 和 `preview_urls` 设为 `false`，启用 `CROSSLAB_AUTH_REQUIRED=true`，并配置 SQLite Durable Object 登录计数及 `ASSETS` 绑定。`assets.run_worker_first=true` 确保静态文件也先经过口令校验。随后执行：
+构建后，工作流按仓库变量设置 `workers_dev`，将 `preview_urls` 设为 `false`，启用 `CROSSLAB_AUTH_REQUIRED=true` 与 `CROSSLAB_REVIEW_ENABLED=true`，并配置登录计数、研究预算两个 SQLite Durable Object 及 `ASSETS` 绑定。`assets.run_worker_first=true` 确保路径先经过访问规则校验，再读取静态文件。随后执行：
 
 ```bash
 pnpm exec wrangler deploy --config dist/server/wrangler.json --name crosslab-sciencepal --keep-vars
@@ -58,7 +60,7 @@ CI 的 GitHub 权限仅需 `contents: read`，不生成提交，也不写回源�
 | --- | --- |
 | `CROSSLAB_WORKERS_DEV` | `true` |
 
-再次运行 `main` 工作流，生成配置将使用 `workers_dev:true`、`preview_urls:false`。部署日志提供生产地址。未登录时页面显示口令卡片，API 和静态文件返回 401；输入口令后才能访问工作台。分别检查未登录窗口与已登录窗口，再配置研究服务。
+再次运行 `main` 工作流，生成配置将使用 `workers_dev:true`、`preview_urls:false`。部署日志提供生产地址。匿名访问 `/review` 可体验评审工作台；根页面及所有者 API 仍需口令。分别检查匿名评审入口与已登录所有者入口，再配置研究服务。
 
 登录会话有效期为 8 小时，使用 `HttpOnly`、`Secure`、`SameSite=Strict` Cookie。打开 `/__crosslab/logout` 可退出当前浏览器；修改 Worker Secret 会使已有会话失效。口令缺失或短于 16 字符时返回 503，保持访问关闭。登录计数绑定缺失、异常或返回无效结果时返回 503，拒绝登录。
 
@@ -85,3 +87,4 @@ CI 使用固定迁移 `crosslab-login-v1`，以 `new_sqlite_classes: ['LoginAtte
 ## 5. 验证自动更新
 
 在已登录会话中检查 `/api/sciencepal` 配置状态，运行一次研究请求并核对返回结果。后续推送到 `main` 后，核对对应提交的 Actions 记录与网站更新。每次运行摘要都会明确生产 URL 是否开启，预览 URL 始终关闭。
+

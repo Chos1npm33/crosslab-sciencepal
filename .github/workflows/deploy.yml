@@ -45,7 +45,7 @@ jobs:
         run: node tests/run.mjs
 
       - name: Test Cloudflare Worker runtime
-        run: node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs
+        run: node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs tests/review-worker.test.mjs tests/review-integration.test.mjs
 
       - name: Check TypeScript
         run: pnpm exec tsc --noEmit
@@ -63,16 +63,18 @@ jobs:
           const config = JSON.parse(readFileSync(path, 'utf8'));
           config.workers_dev = process.env.CROSSLAB_WORKERS_DEV === 'true';
           config.preview_urls = false;
-          config.vars = { ...config.vars, CROSSLAB_AUTH_REQUIRED: 'true' };
+          config.vars = { ...config.vars, CROSSLAB_AUTH_REQUIRED: 'true', CROSSLAB_REVIEW_ENABLED: 'true' };
           config.assets = { ...config.assets, binding: 'ASSETS', run_worker_first: true };
           config.ratelimits = (config.ratelimits || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_LIMITER');
           if (!config.ratelimits.length) delete config.ratelimits;
           config.durable_objects = { ...config.durable_objects, bindings: [
-            ...(config.durable_objects?.bindings || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_GUARD'),
-            { name: 'CROSSLAB_LOGIN_GUARD', class_name: 'LoginAttemptCounter' }
+            ...(config.durable_objects?.bindings || []).filter(binding => !['CROSSLAB_LOGIN_GUARD', 'CROSSLAB_RESEARCH_QUOTA'].includes(binding.name)),
+            { name: 'CROSSLAB_LOGIN_GUARD', class_name: 'LoginAttemptCounter' },
+            { name: 'CROSSLAB_RESEARCH_QUOTA', class_name: 'ResearchQuota' }
           ] };
-          config.migrations = [...(config.migrations || []).filter(migration => migration.tag !== 'crosslab-login-v1'),
-            { tag: 'crosslab-login-v1', new_sqlite_classes: ['LoginAttemptCounter'] }];
+          config.migrations = [...(config.migrations || []).filter(migration => !['crosslab-login-v1', 'crosslab-review-v1'].includes(migration.tag)),
+            { tag: 'crosslab-login-v1', new_sqlite_classes: ['LoginAttemptCounter'] },
+            { tag: 'crosslab-review-v1', new_sqlite_classes: ['ResearchQuota'] }];
           writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
           console.log(`Deployment URLs: workers.dev=${config.workers_dev}; previews=false`);
           NODE
@@ -110,9 +112,10 @@ jobs:
             echo 'Worker: crosslab-sciencepal'
             if [ "$CROSSLAB_WORKERS_DEV" = 'true' ]; then
               echo 'Production workers.dev URL enabled; preview URLs disabled.'
-              echo 'Website access-code login is required for pages, APIs and static assets. The deployment log contains the URL and version.'
+              echo 'Owner pages/APIs require the website access code; /review is public with persistent research quotas. The deployment log contains the URL and version.'
             else
               echo 'Bootstrap deployment: production and preview URLs disabled. Set the CROSSLAB_ACCESS_CODE Worker secret before enabling the production URL.'
               echo 'The deployment log above contains the deployment version.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
