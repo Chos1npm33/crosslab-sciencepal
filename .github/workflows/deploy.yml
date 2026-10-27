@@ -53,6 +53,20 @@ jobs:
       - name: Build production site
         run: pnpm build
 
+      - name: Configure Cloudflare deployment URLs
+        env:
+          CROSSLAB_WORKERS_DEV: ${{ vars.CROSSLAB_WORKERS_DEV }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'dist/server/wrangler.json';
+          const config = JSON.parse(readFileSync(path, 'utf8'));
+          config.workers_dev = process.env.CROSSLAB_WORKERS_DEV === 'true';
+          config.preview_urls = false;
+          writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          console.log(`Deployment URLs: workers.dev=${config.workers_dev}; previews=false`);
+          NODE
+
       - name: Check deployment configuration
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -77,10 +91,18 @@ jobs:
 
       - name: Record successful deployment
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          CROSSLAB_WORKERS_DEV: ${{ vars.CROSSLAB_WORKERS_DEV }}
         run: |
           {
             echo '### CrossLab deployed to Cloudflare Workers'
             echo "Commit: $GITHUB_SHA"
             echo 'Worker: crosslab-sciencepal'
-            echo 'The deployment log above contains the active URL and deployment version.'
+            if [ "$CROSSLAB_WORKERS_DEV" = 'true' ]; then
+              echo 'Production workers.dev URL enabled; preview URLs disabled.'
+              echo 'The deployment log above contains the URL and deployment version. Access remains configured in Cloudflare.'
+            else
+              echo 'Bootstrap deployment: production and preview URLs disabled. Configure owner-only Access before enabling the production URL.'
+              echo 'The deployment log above contains the deployment version.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
