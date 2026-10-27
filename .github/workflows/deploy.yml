@@ -45,7 +45,7 @@ jobs:
         run: node tests/run.mjs
 
       - name: Test Cloudflare Worker runtime
-        run: node --test tests/sciencepal-worker.test.mjs
+        run: node --test tests/sciencepal-worker.test.mjs tests/worker-access.test.mjs
 
       - name: Check TypeScript
         run: pnpm exec tsc --noEmit
@@ -53,7 +53,7 @@ jobs:
       - name: Build production site
         run: pnpm build
 
-      - name: Configure Cloudflare deployment URLs
+      - name: Configure Cloudflare access and deployment URLs
         env:
           CROSSLAB_WORKERS_DEV: ${{ vars.CROSSLAB_WORKERS_DEV }}
         run: |
@@ -63,6 +63,10 @@ jobs:
           const config = JSON.parse(readFileSync(path, 'utf8'));
           config.workers_dev = process.env.CROSSLAB_WORKERS_DEV === 'true';
           config.preview_urls = false;
+          config.vars = { ...config.vars, CROSSLAB_AUTH_REQUIRED: 'true' };
+          config.assets = { ...config.assets, binding: 'ASSETS', run_worker_first: true };
+          config.ratelimits = [...(config.ratelimits || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_LIMITER'),
+            { name: 'CROSSLAB_LOGIN_LIMITER', namespace_id: '2026102701', simple: { limit: 5, period: 60 } }];
           writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
           console.log(`Deployment URLs: workers.dev=${config.workers_dev}; previews=false`);
           NODE
@@ -100,9 +104,9 @@ jobs:
             echo 'Worker: crosslab-sciencepal'
             if [ "$CROSSLAB_WORKERS_DEV" = 'true' ]; then
               echo 'Production workers.dev URL enabled; preview URLs disabled.'
-              echo 'The deployment log above contains the URL and deployment version. Access remains configured in Cloudflare.'
+              echo 'Website access-code login is required for pages, APIs and static assets. The deployment log contains the URL and version.'
             else
-              echo 'Bootstrap deployment: production and preview URLs disabled. Configure owner-only Access before enabling the production URL.'
+              echo 'Bootstrap deployment: production and preview URLs disabled. Set the CROSSLAB_ACCESS_CODE Worker secret before enabling the production URL.'
               echo 'The deployment log above contains the deployment version.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

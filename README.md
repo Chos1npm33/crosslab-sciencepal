@@ -68,7 +68,7 @@ node scripts/run-framework.mjs build
 
 ## GitHub 自动部署
 
-通过 GitHub Actions 将 `main` 分支部署到自己的 Cloudflare Workers。首次部署默认关闭生产和预览 URL；配置并核对仅本人可访问的 Cloudflare Access 后，将仓库变量 `CROSSLAB_WORKERS_DEV` 设为 `true`，再次运行工作流即可启用生产地址。预览 URL 保持关闭，研究密钥在访问验收后配置。步骤见[自动部署说明](docs/github-deployment.md)。
+通过 GitHub Actions 将 `main` 分支部署到自己的 Cloudflare Workers。首次部署关闭生产和预览 URL；设置服务端 Secret `CROSSLAB_ACCESS_CODE`（至少 16 字符的随机口令）后，将仓库变量 `CROSSLAB_WORKERS_DEV` 设为 `true` 并重新运行工作流。页面、API 和静态文件均需口令登录，会话持续 8 小时；预览 URL 保持关闭。登录验收后再配置研究密钥。步骤见[自动部署说明](docs/github-deployment.md)。
 
 ## 代码与文档
 
