@@ -1,5 +1,6 @@
 import handler from "vinext/server/fetch-handler";
 import { withWebsiteAccess } from "./access";
+export { LoginAttemptCounter } from "./access-rate-limit";
 
 const worker = {
   fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext) {

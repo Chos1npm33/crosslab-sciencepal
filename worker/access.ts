@@ -1,7 +1,7 @@
 export interface AccessEnvironment {
   CROSSLAB_AUTH_REQUIRED?: string;
   CROSSLAB_ACCESS_CODE?: string;
-  CROSSLAB_LOGIN_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  CROSSLAB_LOGIN_GUARD?: DurableObjectNamespace;
 }
 
 const COOKIE = '__Host-crosslab_access';
@@ -15,6 +15,20 @@ function base64url(bytes: ArrayBuffer) {
 
 async function sessionKey(secret: string) {
   return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+async function loginAttempt(request: Request, secret: string, namespace: DurableObjectNamespace) {
+  const origin = new URL(request.url).origin;
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const digest = await crypto.subtle.sign('HMAC', await sessionKey(secret), encoder.encode(`CrossLab login rate\n${origin}\n${ip}`));
+  const object = namespace.get(namespace.idFromName(base64url(digest)));
+  const response = await object.fetch('https://login-guard.internal/attempt', { method: 'POST' });
+  if (!response.ok) throw new Error('Login counter unavailable');
+  const result: unknown = await response.json();
+  if (!result || typeof result !== 'object' || !('success' in result) || typeof result.success !== 'boolean' || !('retryAfter' in result) || !Number.isInteger(result.retryAfter)) throw new Error('Invalid login counter response');
+  const retryAfter = result.retryAfter as number;
+  if ((result.success && retryAfter !== 0) || (!result.success && (retryAfter < 1 || retryAfter > 60))) throw new Error('Invalid login counter response');
+  return { success: result.success, retryAfter };
 }
 
 export async function signAccessSession(secret: string, origin: string, nowMs = Date.now()): Promise<string> {
@@ -44,11 +58,11 @@ function sessionCookie(request: Request) {
   return values.length === 1 ? values[0].slice(COOKIE.length + 1) : '';
 }
 
-function privateResponse(response: Response) {
+function privateResponse(response: Response, referrerPolicy: 'no-referrer' | 'same-origin' = 'no-referrer') {
   const result = new Response(response.body, response);
   result.headers.set('Cache-Control', 'private, no-store');
   result.headers.set('X-Content-Type-Options', 'nosniff');
-  result.headers.set('Referrer-Policy', 'no-referrer');
+  result.headers.set('Referrer-Policy', referrerPolicy);
   return result;
 }
 
@@ -58,12 +72,13 @@ function redirect(location: string, cookie?: string) {
 
 function loginPage(message = '', status = 200, logout = false) {
   // All text is fixed server copy: no request value or configured secret is rendered.
+  // HTML form POSTs need same-origin policy: no-referrer makes browsers send Origin: null.
   return privateResponse(new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>进入 CrossLab</title><style>
   *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#f3f5f2;color:#20332c;font:16px/1.6 system-ui,sans-serif}main{width:min(100%,420px);padding:36px;border:1px solid #dce4dc;border-radius:20px;background:#fff;box-shadow:0 12px 48px #20332c0b}.brand{font-size:14px;color:#48755b;letter-spacing:.06em}h1{font-size:25px;line-height:1.3;margin:16px 0 10px}p{color:#68776d;margin:0 0 24px}label{display:block;font-size:14px;margin-bottom:8px}input,button{font:inherit;width:100%;border-radius:10px;padding:12px 14px}input{border:1px solid #b8c7bc;margin-bottom:18px}input:focus{outline:2px solid #80aa8e;outline-offset:2px}button{border:0;background:#315e43;color:#fff;cursor:pointer}a{color:#315e43}.message{color:#9d342e;font-size:14px;margin:0 0 16px}:focus-visible{outline:2px solid #315e43;outline-offset:3px}
   </style></head><body><main><div class="brand">CrossLab · 跨界研究器</div><h1>${logout ? '退出工作台' : '进入研究工作台'}</h1><p>${logout ? '退出后，此浏览器需要重新输入访问口令。' : '输入网站访问口令，继续你的跨学科研究。'}</p>${message ? `<p class="message" role="alert">${message}</p>` : ''}<form method="post" action="/__crosslab/${logout ? 'logout' : 'login'}">${logout ? '' : '<label for="code">访问口令</label><input id="code" name="code" type="password" autocomplete="current-password" required minlength="16" maxlength="256" autofocus>'}<button type="submit">${logout ? '退出登录' : '进入工作台'}</button></form>${logout ? '<p style="margin:16px 0 0"><a href="/">返回工作台</a></p>' : ''}</main></body></html>`, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" },
-  }));
+  }), 'same-origin');
 }
 
 function failure(message: string, status: number) {
@@ -115,12 +130,12 @@ export async function withWebsiteAccess(request: Request, env: AccessEnvironment
   if ((login || logout) && request.method === 'POST') {
     if (request.headers.get('Origin') !== url.origin) return failure('请求来源无效。', 403);
     if (logout) return redirect('/__crosslab/login', `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
-    if (!env.CROSSLAB_LOGIN_LIMITER) return failure('登录暂不可用，请稍后重试。', 503);
+    if (!env.CROSSLAB_LOGIN_GUARD) return failure('登录暂不可用，请稍后重试。', 503);
     try {
-      const { success } = await env.CROSSLAB_LOGIN_LIMITER.limit({ key: `crosslab-login:${url.hostname}:${request.headers.get('CF-Connecting-IP') || 'unknown'}` });
+      const { success, retryAfter } = await loginAttempt(request, secret, env.CROSSLAB_LOGIN_GUARD);
       if (!success) {
         const response = loginPage('尝试次数较多，请一分钟后重试。', 429);
-        response.headers.set('Retry-After', '60');
+        response.headers.set('Retry-After', String(retryAfter));
         return response;
       }
     } catch { return failure('登录暂不可用，请稍后重试。', 503); }

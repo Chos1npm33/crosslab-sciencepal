@@ -65,8 +65,14 @@ jobs:
           config.preview_urls = false;
           config.vars = { ...config.vars, CROSSLAB_AUTH_REQUIRED: 'true' };
           config.assets = { ...config.assets, binding: 'ASSETS', run_worker_first: true };
-          config.ratelimits = [...(config.ratelimits || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_LIMITER'),
-            { name: 'CROSSLAB_LOGIN_LIMITER', namespace_id: '2026102701', simple: { limit: 5, period: 60 } }];
+          config.ratelimits = (config.ratelimits || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_LIMITER');
+          if (!config.ratelimits.length) delete config.ratelimits;
+          config.durable_objects = { ...config.durable_objects, bindings: [
+            ...(config.durable_objects?.bindings || []).filter(binding => binding.name !== 'CROSSLAB_LOGIN_GUARD'),
+            { name: 'CROSSLAB_LOGIN_GUARD', class_name: 'LoginAttemptCounter' }
+          ] };
+          config.migrations = [...(config.migrations || []).filter(migration => migration.tag !== 'crosslab-login-v1'),
+            { tag: 'crosslab-login-v1', new_sqlite_classes: ['LoginAttemptCounter'] }];
           writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
           console.log(`Deployment URLs: workers.dev=${config.workers_dev}; previews=false`);
           NODE

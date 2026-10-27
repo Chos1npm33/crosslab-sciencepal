@@ -14,5 +14,21 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CROSSLAB_LOGIN_GUARD",
+        "class_name": "LoginAttemptCounter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "crosslab-login-v1",
+      "new_sqlite_classes": [
+        "LoginAttemptCounter"
+      ]
+    }
+  ]
 }

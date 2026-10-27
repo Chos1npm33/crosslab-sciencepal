@@ -5,6 +5,6 @@ declare namespace Cloudflare {
     ASSETS?: Fetcher;
     CROSSLAB_AUTH_REQUIRED?: string;
     CROSSLAB_ACCESS_CODE?: string;
-    CROSSLAB_LOGIN_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+    CROSSLAB_LOGIN_GUARD?: DurableObjectNamespace;
   }
 }
