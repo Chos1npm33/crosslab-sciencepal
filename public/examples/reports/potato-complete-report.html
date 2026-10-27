@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>植物科学 · 马铃薯 bulk 多组学 · 完整研究报告</title><style>body{margin:0;background:#f4f6ef;color:#203a31;font:16px/1.9 system-ui,"Microsoft YaHei",sans-serif}main{max-width:920px;margin:40px auto;padding:42px;background:white;border:1px solid #dce3d6;border-radius:14px}h1{font-size:30px;line-height:1.4}h2{font-size:21px;border-bottom:1px solid #dce3d6;padding-bottom:10px;margin-top:38px}p,li{white-space:pre-wrap;overflow-wrap:anywhere}header p{font-size:12px;color:#63766b}nav{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}a{color:#23634b}nav a{font-size:13px;background:#edf3e6;padding:5px 10px;border-radius:5px;text-decoration:none}section>p,li{padding:15px 18px;background:#fafbf7;border-left:3px solid #b4c9a2;border-radius:3px}ol{padding-left:24px}@media(max-width:650px){main{margin:0;padding:22px;border:0}h1{font-size:24px}}@media print{body,main{background:white}main{max-width:none;margin:0;padding:0;border:0}nav{display:none}h2{break-after:avoid}section>p,li{background:white;break-inside:avoid}a{color:inherit}@page{size:A4;margin:18mm}}</style><main><header><h1>植物科学 · 马铃薯 bulk 多组学 · 完整研究报告</h1><p>CrossLab · v7 · analyze：预置演示 / plan：预置演示 / deep：预置演示 / evaluate：预置演示</p><p>包含具体发现、证据、修订前后结论、验证方案和运行记录。可用浏览器打印功能保存为 PDF。</p></header><nav><a href="#s0">01 / 最终结论</a><a href="#s1">02 / 修订前后发生了什么</a><a href="#s2">03 / 具体发现与证据</a><a href="#s3">04 / 已确认的研究范围</a><a href="#s4">05 / 最小验证方案与判定标准</a><a href="#s5">06 / 方案评估</a><a href="#s6">07 / 证据缺口与后续工作</a><a href="#s7">08 / 参考文献与阅读范围</a><a href="#s8">09 / 运行记录与来源</a></nav><section id="s0"><h2>01 / 最终结论</h2><p>补充条件后继续：当前可形成候选方案，仍需补充数据条件或完成迁移审查。</p><p>修订后的研究假说：先比较可比样本的多组学状态分布；若要研究发育时间过程，需补充多时期数据，再检验状态联系与机制假说。</p><p>候选新增贡献：候选贡献是明确“最优传输与状态分布比较”在“植物科学 · 马铃薯 bulk 多组学”中的适用条件，并检验其相对现有方法的增益。</p></section><section id="s1"><h2>02 / 修订前后发生了什么</h2><p>修订前的问题：能否用最优传输比较不同氮处理下马铃薯块茎的 bulk 转录组与代谢组状态，并推断块茎形成的发育过程？</p><p>修订前的判断：暂停当前迁移；至少一个关键迁移前提被用户否定。先调整映射或更换借鉴方向。</p><p>本次修订：将目标修订为不同氮处理下 bulk 样本状态的分布比较。先核对组学配对、生物重复与批次，以 PCA 和常规距离为基线；不将传输耦合解释为细胞谱系或真实发育轨迹。</p><p>当前问题：能否用最优传输比较不同氮处理下马铃薯 bulk 转录组与代谢组的状态分布，并检验相对 PCA 和常规距离的增益？</p><p>状态分布 → 各时期或各条件下的可比多组学样本｜待核实。成立条件：明确 bulk 或单细胞单位、组织来源与生物重复</p><p>传输代价 → 表达或代谢特征之间具有生物学解释的距离｜待核实。成立条件：核对归一化、批次效应与组学配准方式</p><p>处理组与质量设定 → 不同氮处理下的独立 bulk 样本分布｜待核实。成立条件：核对生物重复、组学配对与批次；本次比较不解释为真实时间过程。</p></section><section id="s2"><h2>03 / 具体发现与证据</h2><p>【文献依据】Transcriptomics combined with physiological analysis and metabolomics revealed the response of potato tuber formation to nitrogen
+结合转录组、生理分析与代谢组，研究不同氮条件下马铃薯块茎形成的共表达基因与潜在通路。
+依据：[P7]</p><p>【文献依据】Optimal-Transport Analysis of Single-Cell Gene Expression Identifies Developmental Trajectories in Reprogramming
+将最优传输用于单细胞基因表达时间序列，估计不同时间点状态分布之间的联系。
+依据：[P6]</p><p>【迁移推论】迁移推论
+先比较可比样本的多组学状态分布；若要研究发育时间过程，需补充多时期数据，再检验状态联系与机制假说。</p><p>【迁移推论】可落地的替代研究问题
+将每个独立 bulk 生物重复作为特征空间中的一个样本点，分别建立氮处理组的经验分布。最优传输比较的是处理组分布；传输耦合不解释为真实细胞运动、谱系或发育时间。</p><p>【迁移推论】输入、比较对象与预期交付
+先核对样本标识、组织、批次、组学配对和生物重复；按事先确定的归一化与特征集合建立可比空间。以相同样本和特征计算 Wasserstein 距离、常规距离与 PCA 对照，交付处理组距离矩阵、重采样稳定性和特征／通路敏感性记录。这里定义交付结构，未填入计算数值。</p><p>【迁移推论】新增贡献如何判定
+检验最优传输是否提供常规距离未捕获、且对特征选择与批次处理稳定的分布信息。若结论对归一化或代价函数高度敏感，或相对基线没有稳定增量，则保留否定结果；使用最优传输本身不构成方法原创。</p><p>【迁移推论】用户修正已纳入
+将目标修订为不同氮处理下 bulk 样本状态的分布比较。先核对组学配对、生物重复与批次，以 PCA 和常规距离为基线；不将传输耦合解释为细胞谱系或真实发育轨迹。</p></section><section id="s3"><h2>04 / 已确认的研究范围</h2><p>研究领域：植物科学 · 马铃薯 bulk 多组学</p><p>方法：最优传输与状态分布比较</p><p>已有方法／基线：差异表达、差异代谢物与通路富集；用常规距离和 PCA 比较处理组，作为最优传输的基线。</p><p>资源与数据：演示条件：单个发育时期、不同氮处理的 bulk 转录组和代谢组；组学配对、批次与生物重复待核对，目前无法新增时期采样。未上传实验数据。</p><p>研究范围：根据已选 2 条文献记录及 3 项映射执行规则演示。用户材料仅复述所提供的摘要，未读取其全文，也未自动核验其中的主张。检索式是待执行建议；本轮不执行实时检索或实验。</p><p>确认时间：2026-10-27T08:31:39.605Z</p><p>待回答问题：能否用最优传输比较不同氮处理下马铃薯 bulk 转录组与代谢组的状态分布，并检验相对 PCA 和常规距离的增益？</p><p>待回答问题：“最优传输与状态分布比较”在目标问题中的前提是否成立？</p><p>待回答问题：最近邻工作已经解决什么，新增贡献在哪里？</p><p>已确认任务：整理已选文献记录中的贡献、适用范围与对应主张；分别标明预置来源或用户材料</p><p>已确认任务：按用户声明的条件检查采样时期、bulk/单细胞单位、特征可比性、传输代价及增长/死亡假设</p><p>已确认任务：形成候选预测、基线与最小验证方案，列出仍需正式检索的事项</p></section><section id="s4"><h2>05 / 最小验证方案与判定标准</h2><ol><li>固定研究问题：能否用最优传输比较不同氮处理下马铃薯 bulk 转录组与代谢组的状态分布，并检验相对 PCA 和常规距离的增益？</li><li>设置基线：差异表达、差异代谢物与通路富集；用常规距离和 PCA 比较处理组，作为最优传输的基线。。比较引入 最优传输与状态分布比较 后是否增加解释或预测能力。</li><li>测量关键对应关系：各时期或各条件下的可比多组学样本；表达或代谢特征之间具有生物学解释的距离；不同氮处理下的独立 bulk 样本分布。明确单位、时间尺度与样本独立性。</li><li>将验证限定在已有条件的分布比较或横截面预测，明确其目标和适用范围。</li><li>在独立样本上验证预测，并预先指定指标；需要机制结论时增加针对性的干预与阴性对照。</li><li>资源条件：演示条件：单个发育时期、不同氮处理的 bulk 转录组和代谢组；组学配对、批次与生物重复待核对，目前无法新增时期采样。未上传实验数据。。先进行小规模验证，再决定是否扩大研究。</li><li>停止条件：单次采样且无法补样时，暂停真实发育过程重建；另行评估分布比较。关键映射被否定时重建对应关系。</li></ol></section><section id="s5"><h2>06 / 方案评估</h2><p>迁移合理性 · 待验证
+部分映射仍待确认。</p><p>创意性 · 待验证
+需完成最近邻检索，区分方法复用与新的研究贡献。</p><p>可行性 · 待验证
+数据、测量或实验资源仍需具体确认。</p><p>方案完善度 · 一般
+已有问题、映射、基线和验证步骤；样本量与参数设计待完善。</p><p>证据覆盖 · 待验证
+当前选用 2 篇材料，尚未完成系统检索与目标场景覆盖核查。</p></section><section id="s6"><h2>07 / 证据缺口与后续工作</h2><p>条件审查：当前为单次采样，支持范围需限定在可比样本的分布分析。无法补样：暂停真实发育时间轨迹重建；分布比较可作为另一个研究问题评估。</p><p>目标领域证据缺口：本轮预置材料尚未完成目标领域的系统检索。需补充目标组织、时期和数据类型的直接来源，并检查已有交叉研究。</p><p>下一步：检索并比较最近邻研究，核查新增贡献</p><p>下一步：补充目标物种或体系的直接证据</p><p>下一步：由研究者复核验证设计、资源与可实施性</p></section><section id="s7"><h2>08 / 参考文献与阅读范围</h2><p>[P7] Transcriptomics combined with physiological analysis and metabolomics revealed the response of potato tuber formation to nitrogen (2024)
+https://link.springer.com/article/10.1186/s12870-024-05758-2
+贡献：结合转录组、生理分析与代谢组，研究不同氮条件下马铃薯块茎形成的共表达基因与潜在通路。
+适用边界：研究场景为氮处理下的块茎形成；该研究不直接验证最优传输方法或发育轨迹推断。
+来源：预置文献 · 已核对公开摘要</p><p>[P6] Optimal-Transport Analysis of Single-Cell Gene Expression Identifies Developmental Trajectories in Reprogramming (2019)
+https://doi.org/10.1016/j.cell.2019.01.006
+贡献：将最优传输用于单细胞基因表达时间序列，估计不同时间点状态分布之间的联系。
+适用边界：推断的状态联系需要相应数据与模型假设；单次采样不能据此重建真实发育时间轨迹，推断也不等同于真实细胞谱系。
+来源：预置文献 · 附件提供的原始研究 DOI 与方法概要；全文参数尚待复核</p></section><section id="s8"><h2>09 / 运行记录与来源</h2><p>analyze：预置演示</p><p>plan：预置演示</p><p>deep：预置演示</p><p>evaluate：预置演示</p><p>analyze｜demo｜输入 v5
+运行编号：3d7e74a0-0ee2-4646-9e71-816ca9804fec
+完成时间：2026-10-27T08:29:56.451Z</p><p>plan｜demo｜输入 v6
+运行编号：6f3b7fac-3fda-45ff-85bd-ed58c0f68a2a
+完成时间：2026-10-27T08:30:40.708Z</p><p>deep｜demo｜输入 v6
+运行编号：283c18cb-fa8b-4b5a-ab72-2ea6122e6b99
+完成时间：2026-10-27T08:30:50.568Z</p><p>evaluate｜demo｜输入 v6
+运行编号：f3ecd640-e5ed-4054-969e-72074e7f88f3
+完成时间：2026-10-27T08:31:00.500Z</p><p>plan｜demo｜输入 v7
+运行编号：3d440c2c-f10e-498b-b159-a220446f41b2
+完成时间：2026-10-27T08:31:29.995Z</p><p>deep｜demo｜输入 v7
+运行编号：8877b57e-a1f8-403e-8032-778c08aecff5
+完成时间：2026-10-27T08:31:39.615Z</p><p>evaluate｜demo｜输入 v7
+运行编号：3a622391-56b4-4c92-bdb2-eead21d2233c
+完成时间：2026-10-27T08:32:12.698Z</p><p>来源按阶段记录。“预置演示”使用已整理的文献概要与条件规则；SciencePal 实测记录可按原始运行编号核验。本文的研究设计与文献结论，不表示已完成新的数据计算或生物学实验。</p></section></main></html>

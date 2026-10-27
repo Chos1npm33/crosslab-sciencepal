@@ -7,6 +7,8 @@ import ts from 'typescript';
 // keeps the tests dependency-free and exercises the same route used by the UI.
 const output = resolve('.cache/tests');
 const modules = [
+  ['lib/report.ts', 'lib/report.mjs'],
+  ['tests/report.test.ts', 'tests/report.test.mjs'],
   ['lib/examples.ts', 'lib/examples.mjs'],
   ['lib/showcase.ts', 'lib/showcase.mjs'],
   ['lib/genomics-demo.ts', 'lib/genomics-demo.mjs'],
@@ -37,6 +39,7 @@ for (const [source, destination] of modules) {
     .replaceAll("'./demo-provider'", "'./demo-provider.mjs'")
     .replaceAll("'../lib/examples'", "'../lib/examples.mjs'")
     .replaceAll("'../lib/showcase'", "'../lib/showcase.mjs'")
+    .replaceAll("'../lib/report'", "'../lib/report.mjs'")
     .replaceAll("'./research'", "'./research.mjs'")
     .replaceAll("'./review-context'", "'./review-context.mjs'")
     .replaceAll("'../../../server/lib/review-context'", "'../../../server/lib/review-context.mjs'")
@@ -53,6 +56,7 @@ for (const [source, destination] of modules) {
     .replaceAll("'../app/api/sciencepal/route'", "'../app/api/sciencepal/route.mjs'");
   await writeFile(filename, code);
 }
-const result = spawnSync(process.execPath, ['--test', resolve(output, 'tests/http-body.test.mjs'), resolve(output, 'tests/examples.test.mjs'), resolve(output, 'tests/workflow.test.mjs'), resolve(output, 'tests/sciencepal.test.mjs'), resolve(output, 'tests/sciencepal-client.test.mjs')], { stdio: 'inherit' });
+const result = spawnSync(process.execPath, ['--test', resolve(output, 'tests/http-body.test.mjs'), resolve(output, 'tests/report.test.mjs'), resolve(output, 'tests/examples.test.mjs'), resolve(output, 'tests/workflow.test.mjs'), resolve(output, 'tests/sciencepal.test.mjs'), resolve(output, 'tests/sciencepal-client.test.mjs')], { stdio: 'inherit' });
 process.exitCode = result.status ?? 1;
+
 

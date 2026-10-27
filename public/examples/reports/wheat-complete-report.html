@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>基因组学 · 小麦基因组预测 · 完整研究报告</title><style>body{margin:0;background:#f4f6ef;color:#203a31;font:16px/1.9 system-ui,"Microsoft YaHei",sans-serif}main{max-width:920px;margin:40px auto;padding:42px;background:white;border:1px solid #dce3d6;border-radius:14px}h1{font-size:30px;line-height:1.4}h2{font-size:21px;border-bottom:1px solid #dce3d6;padding-bottom:10px;margin-top:38px}p,li{white-space:pre-wrap;overflow-wrap:anywhere}header p{font-size:12px;color:#63766b}nav{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}a{color:#23634b}nav a{font-size:13px;background:#edf3e6;padding:5px 10px;border-radius:5px;text-decoration:none}section>p,li{padding:15px 18px;background:#fafbf7;border-left:3px solid #b4c9a2;border-radius:3px}ol{padding-left:24px}@media(max-width:650px){main{margin:0;padding:22px;border:0}h1{font-size:24px}}@media print{body,main{background:white}main{max-width:none;margin:0;padding:0;border:0}nav{display:none}h2{break-after:avoid}section>p,li{background:white;break-inside:avoid}a{color:inherit}@page{size:A4;margin:18mm}}</style><main><header><h1>基因组学 · 小麦基因组预测 · 完整研究报告</h1><p>CrossLab · v9 · analyze：预置演示 / plan：预置演示 / deep：预置演示 / evaluate：预置演示</p><p>包含具体发现、证据、修订前后结论、验证方案和运行记录。可用浏览器打印功能保存为 PDF。</p></header><nav><a href="#s0">01 / 最终结论</a><a href="#s1">02 / 修订前后发生了什么</a><a href="#s2">03 / 具体发现与证据</a><a href="#s3">04 / 已确认的研究范围</a><a href="#s4">05 / 最小验证方案与判定标准</a><a href="#s5">06 / 方案评估</a><a href="#s6">07 / 证据缺口与后续工作</a><a href="#s7">08 / 参考文献与阅读范围</a><a href="#s8">09 / 运行记录与来源</a></nav><section id="s0"><h2>01 / 最终结论</h2><p>补充条件后继续：研究方案已形成；尚需核对元数据、执行训练并检验相对基线的增益。</p><p>修订后的研究假说：在固定的家系隔离与留出年份测试中，检验 CNN 相对 RR-BLUP 的预测增益是否稳定，并量化增益的不确定性与计算成本。</p><p>候选新增贡献：候选贡献是检验严格划分下的稳定预测增益及失败边界，不将使用深度学习本身作为新发现。</p></section><section id="s1"><h2>02 / 修订前后发生了什么</h2><p>修订前的问题：将卷积神经网络引入小麦 SNP 基因型到籽粒产量的预测，在家系隔离和留出年份验证下，是否仍优于 RR-BLUP 基线？</p><p>修订前的判断：在固定的家系隔离与留出年份测试中，检验 CNN 相对 RR-BLUP 的预测增益是否稳定，并量化增益的不确定性与计算成本。</p><p>本次修订：外层按家系分组并留出年份；同一材料的重复记录不得跨训练测试集。缺失填补、标准化和 SNP 筛选只拟合训练折，超参数在内层验证选择。用同一划分比较 CNN 与 RR-BLUP，报告 Pearson r、RMSE、置信区间和计算成本。</p><p>当前问题：将卷积神经网络引入小麦 SNP 基因型到籽粒产量的预测，在家系隔离和留出年份验证下，是否仍优于 RR-BLUP 基线？</p><p>输入特征 → 统一材料标识与等位基因编码的 SNP 矩阵｜待核实。成立条件：处理缺失率、等位基因方向、标记顺序；预处理只拟合训练数据。</p><p>预测标签与损失 → 经过明确环境校正定义的小麦籽粒产量｜待核实。成立条件：核对样本对应、表型单位与重复测量；避免测试标签参与特征选择。</p><p>泛化与验证 → 未参与训练的家系或年份中的材料｜待核实。成立条件：记录家系、年份与环境；同一材料的重复不得跨集合，调参和最终测试分离。</p></section><section id="s2"><h2>03 / 具体发现与证据</h2><p>【文献依据】A deep convolutional neural network approach for predicting phenotypes from genotypes
+提出 DeepGS，用卷积神经网络从基因型预测表型，并研究与 RR-BLUP 集成的互补性。
+依据：[G1]</p><p>【文献依据】Deep Learning for Predicting Complex Traits in Spring Wheat Breeding Program
+在春小麦育种群体中比较 MLP、CNN 与 rrBLUP，并通过交叉验证及独立年份预测评估复杂性状。
+依据：[G2]</p><p>【迁移推论】迁移推论
+以统一 SNP 编码作为网络输入，以产量为预测标签；模型学习的关联不能直接解释为基因作用机制。</p><p>【迁移推论】用户修订
+外层按家系分组并留出年份；同一材料的重复记录不得跨训练测试集。缺失填补、标准化和 SNP 筛选只拟合训练折，超参数在内层验证选择。用同一划分比较 CNN 与 RR-BLUP，报告 Pearson r、RMSE、置信区间和计算成本。</p><p>【迁移推论】本次审查得到的具体结论
+CNN 已有基因组预测先例，当前可检验的问题是：在家系隔离与留出年份后，它相对 RR-BLUP 的增益是否仍成立。随机划分结果与未来年份预测分别报告，不能用前者替代后者。
+依据：[G1] [G2]</p><p>【迁移推论】可以交付的比较结果结构
+后续每个测试划分输出“真实产量、均值基线预测、RR-BLUP 预测、CNN 预测”四列；在同一测试材料上计算 Pearson r、RMSE 和配对误差差值，并报告重采样不确定性、耗时与按家系／年份的误差。当前交付的是这套可执行验证设计，表中数值等待真实训练。</p><p>【迁移推论】判定规则与否定结果
+将“相对 RR-BLUP 改善预测误差且跨划分稳定”作为待检验条件。若 CNN 的优势随年份或家系划分消失，报告场景依赖或没有稳定增益；若缺少关键元数据，暂停相应泛化结论。样本、超参数和测试划分应在运行前固定。</p></section><section id="s3"><h2>04 / 已确认的研究范围</h2><p>研究领域：基因组学 · 小麦基因组预测</p><p>方法：卷积神经网络与基因组预测</p><p>已有方法／基线：RR-BLUP／GBLUP 和训练集均值；所有模型使用相同训练、验证与测试划分，并比较 Pearson r、RMSE 与计算成本。</p><p>资源与数据：演示条件：计划复用公开小麦 SNP 与多年份田间表型，保留材料、家系、年份和环境标识；数据许可、样本对应、缺失率与计算资源待核对。尚未下载或训练。</p><p>研究范围：按预置论文概要与用户条件生成研究计划。本轮没有下载数据、训练 CNN 或计算预测精度。</p><p>确认时间：2026-10-27T08:39:27.343Z</p><p>待回答问题：将卷积神经网络引入小麦 SNP 基因型到籽粒产量的预测，在家系隔离和留出年份验证下，是否仍优于 RR-BLUP 基线？</p><p>待回答问题：家系和年份隔离后，预测增益是否仍成立？</p><p>已确认任务：核对 SNP、表型与元数据对应，记录数据许可和缺失率</p><p>已确认任务：冻结家系与年份测试集；训练折内完成预处理、特征筛选与调参</p><p>已确认任务：用同一划分比较 CNN、RR-BLUP 与均值基线，报告相关系数、RMSE、不确定性和计算成本</p><p>已确认任务：检查最近邻工作，区分已有算法复用与目标场景中的新增证据</p></section><section id="s4"><h2>05 / 最小验证方案与判定标准</h2><ol><li>核对公开数据许可、SNP 质控、材料对应与表型单位。</li><li>预先冻结按家系／年份隔离的测试集；相同材料的重复记录保持在同一侧。</li><li>在训练折内拟合缺失填补、标准化和 SNP 筛选；使用内层验证调参。</li><li>用完全相同的数据划分比较均值基线、RR-BLUP／GBLUP 与 CNN。</li><li>报告 Pearson r、RMSE、置信区间与计算成本；按家系和年份分层检查误差。</li><li>若增益不稳定、置信区间无法支持改善或数据泄漏无法排除，保留否定结果。</li><li>停止条件：缺少家系／年份元数据时，暂停跨家系或跨年份泛化主张；若增益不稳定或低于基线，保留否定结果。</li></ol></section><section id="s5"><h2>06 / 方案评估</h2><p>迁移合理性 · 一般
+已有基因组预测文献支持方法参考，当前样本对应与标签定义仍需核验。</p><p>创意性 · 待验证
+CNN 基因组预测已有先例。新贡献需通过最近邻检索与目标场景验证确定。</p><p>可行性 · 待验证
+数据许可、家系与年份标识及计算预算尚待核对。</p><p>方案完善度 · 一般
+已有基线、分组划分与指标，样本规模、参数和复现结果尚待补全。</p><p>证据覆盖 · 待验证
+目前两篇预置核心文献；未完成系统检索和数据复现。</p></section><section id="s6"><h2>07 / 证据缺口与后续工作</h2><p>验证条件：需核对家系、年份、环境和材料重复；随机划分中的亲缘关系会影响测试解释。</p><p>尚未获得的结果：没有模型训练结果、性能增益或实验发现。最近邻检索与独立复现仍待执行。</p><p>下一步：检索最近邻工作并核查候选贡献</p><p>下一步：运行独立数据验证</p><p>下一步：公开划分、代码、参数与负面结果</p></section><section id="s7"><h2>08 / 参考文献与阅读范围</h2><p>[G1] A deep convolutional neural network approach for predicting phenotypes from genotypes (2018)
+https://doi.org/10.1007/s00425-018-2976-9
+贡献：提出 DeepGS，用卷积神经网络从基因型预测表型，并研究与 RR-BLUP 集成的互补性。
+适用边界：已有 AI + 基因组预测工作；采用 CNN 本身不能视为新的科研贡献，其结果不能直接外推到当前数据。
+来源：预置文献 · 已核对 PubMed 摘要与作者代码仓库  </p><p>[G2] Deep Learning for Predicting Complex Traits in Spring Wheat Breeding Program (2020)
+https://doi.org/10.3389/fpls.2020.613325
+贡献：在春小麦育种群体中比较 MLP、CNN 与 rrBLUP，并通过交叉验证及独立年份预测评估复杂性状。
+适用边界：预测性能依赖性状、环境与群体；本案例尚未复现模型或获得性能结果。
+来源：预置文献 · 已核对公开论文的验证设计  </p></section><section id="s8"><h2>09 / 运行记录与来源</h2><p>analyze：预置演示</p><p>plan：预置演示</p><p>deep：预置演示</p><p>evaluate：预置演示</p><p>analyze｜demo｜输入 v8
+运行编号：fe603fa8-3434-4bb6-bd74-f25e413321b5
+完成时间：2026-10-27T08:37:36.370Z</p><p>plan｜demo｜输入 v9
+运行编号：af0cb5a4-3ee0-46ca-849d-00bba34406b9
+完成时间：2026-10-27T08:38:24.457Z</p><p>deep｜demo｜输入 v9
+运行编号：4e9a4cad-b2cd-473b-a5ca-d86e7565fcbd
+完成时间：2026-10-27T08:39:27.355Z</p><p>evaluate｜demo｜输入 v9
+运行编号：d015580a-0c45-47df-b153-64ca0493d9ef
+完成时间：2026-10-27T08:39:36.863Z</p><p>来源按阶段记录。“预置演示”使用已整理的文献概要与条件规则；SciencePal 实测记录可按原始运行编号核验。本文的研究设计与文献结论，不表示已完成新的数据计算或生物学实验。</p></section></main></html>

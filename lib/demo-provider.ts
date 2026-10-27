@@ -37,6 +37,9 @@ export async function deepResearch(c: Context): Promise<Result> {
   return { fingerprint: await fingerprint(c), hypothesis, completedAt: new Date().toISOString(), findings: [
     ...c.papers.map(p => ({ title: p.title, body: p.contribution, kind: 'evidence' as const, sourceIds: [p.id] })),
     { title: '迁移推论', body: hypothesis, kind: 'inference', sourceIds: [] },
+    ...(isTransport ? [{ title: '可落地的替代研究问题', body: processBlocked ? '在当前数据条件下，发育过程重建的结论为暂停。可另立一个问题：不同氮处理的 bulk 样本状态分布是否存在稳健差异；需修订问题并重新确认后再研究。' : '将每个独立 bulk 生物重复作为特征空间中的一个样本点，分别建立氮处理组的经验分布。最优传输比较的是处理组分布；传输耦合不解释为真实细胞运动、谱系或发育时间。', kind: 'inference' as const, sourceIds: [] },
+    { title: '输入、比较对象与预期交付', body: '先核对样本标识、组织、批次、组学配对和生物重复；按事先确定的归一化与特征集合建立可比空间。以相同样本和特征计算 Wasserstein 距离、常规距离与 PCA 对照，交付处理组距离矩阵、重采样稳定性和特征／通路敏感性记录。这里定义交付结构，未填入计算数值。', kind: 'inference' as const, sourceIds: [] },
+    { title: '新增贡献如何判定', body: '检验最优传输是否提供常规距离未捕获、且对特征选择与批次处理稳定的分布信息。若结论对归一化或代价函数高度敏感，或相对基线没有稳定增量，则保留否定结果；使用最优传输本身不构成方法原创。', kind: 'inference' as const, sourceIds: [] }] : []),
     { title: '条件审查', body: rejected.length ? `用户已否定：${rejected.map(m => m.source).join('、')}。当前迁移需暂停，重建这些映射。` : isTransport ? transportGap : c.evidence === 'unknown' ? '证据类型尚不明确，先确认可测变量和数据来源。' : c.evidence === 'association' ? '现有材料支持关联层面的候选筛选。因果或资源流解释需要额外测量或干预。' : '用户声明具有机制或功能数据，需核对测量定义、质量与重复性。', kind: 'gap', sourceIds: [] },
     { title: '目标领域证据缺口', body: '本轮预置材料尚未完成目标领域的系统检索。需补充目标组织、时期和数据类型的直接来源，并检查已有交叉研究。', kind: 'gap', sourceIds: [] },
     { title: '用户修正已纳入', body: c.note || '当前没有补充说明；按已审查映射制定验证方案。', kind: 'inference', sourceIds: [] },

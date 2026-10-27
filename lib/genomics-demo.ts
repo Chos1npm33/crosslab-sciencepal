@@ -25,6 +25,9 @@ export async function genomicsDeep(c: Context): Promise<Result> {
       {title:'迁移推论',body:'以统一 SNP 编码作为网络输入，以产量为预测标签；模型学习的关联不能直接解释为基因作用机制。',kind:'inference',sourceIds:[]},
       {title:'验证条件',body:blocked?'已有关键映射被否定，先补足数据条件。':'需核对家系、年份、环境和材料重复；随机划分中的亲缘关系会影响测试解释。',kind:'gap',sourceIds:[]},
       {title:'用户修订',body:c.note||'尚未补充验证划分。请明确目标部署人群或年份。',kind:'inference',sourceIds:[]},
+      {title:'本次审查得到的具体结论',body:'CNN 已有基因组预测先例，当前可检验的问题是：在家系隔离与留出年份后，它相对 RR-BLUP 的增益是否仍成立。随机划分结果与未来年份预测分别报告，不能用前者替代后者。',kind:'inference',sourceIds:c.papers.filter(p=>['G1','G2'].includes(p.id)).map(p=>p.id)},
+      {title:'可以交付的比较结果结构',body:'后续每个测试划分输出“真实产量、均值基线预测、RR-BLUP 预测、CNN 预测”四列；在同一测试材料上计算 Pearson r、RMSE 和配对误差差值，并报告重采样不确定性、耗时与按家系／年份的误差。当前交付的是这套可执行验证设计，表中数值等待真实训练。',kind:'inference',sourceIds:[]},
+      {title:'判定规则与否定结果',body:'将“相对 RR-BLUP 改善预测误差且跨划分稳定”作为待检验条件。若 CNN 的优势随年份或家系划分消失，报告场景依赖或没有稳定增益；若缺少关键元数据，暂停相应泛化结论。样本、超参数和测试划分应在运行前固定。',kind:'inference',sourceIds:[]},
       {title:'尚未获得的结果',body:'没有模型训练结果、性能增益或实验发现。最近邻检索与独立复现仍待执行。',kind:'gap',sourceIds:[]}],
     experiment:['核对公开数据许可、SNP 质控、材料对应与表型单位。','预先冻结按家系／年份隔离的测试集；相同材料的重复记录保持在同一侧。','在训练折内拟合缺失填补、标准化和 SNP 筛选；使用内层验证调参。','用完全相同的数据划分比较均值基线、RR-BLUP／GBLUP 与 CNN。','报告 Pearson r、RMSE、置信区间与计算成本；按家系和年份分层检查误差。','若增益不稳定、置信区间无法支持改善或数据泄漏无法排除，保留否定结果。'],next:blocked?['补齐缺失元数据','重新审查映射并确认计划']:['检索最近邻工作并核查候选贡献','运行独立数据验证','公开划分、代码、参数与负面结果'] };
 }
